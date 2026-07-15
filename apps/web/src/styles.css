@@ -198,6 +198,17 @@ header p {
   margin: 0.2rem 0;
 }
 
+.hint {
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.hint a {
+  color: var(--accent);
+}
+
 .field {
   display: grid;
   grid-template-columns: 4.5rem 1fr;

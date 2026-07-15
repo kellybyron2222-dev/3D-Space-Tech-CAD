@@ -6,7 +6,7 @@ Open-source **CubeSat Phase A systems workbook**: parametric 3D geometry, mass/p
 
 ## Status
 
-**MVP-2 in progress:** Reference-3U parametric chassis in an OpenCascade (Replicad) Web Worker, three.js viewport, STEP/STL export, live L0 budgets + CDS scorecard.
+**MVP-2+:** Defaults to an open **3U CubeSat structure** STEP ([OSCubeSatStruct Mk5](https://github.com/elfenix7/OSCubeSatStruct), CERN-OHL-P), with STEP/STL import, OCCT Web Worker, budgets + CDS scorecard. Simple parametric demo is optional.
 
 Repository: [kellybyron2222-dev/3D-Space-Tech-CAD](https://github.com/kellybyron2222-dev/3D-Space-Tech-CAD)
 

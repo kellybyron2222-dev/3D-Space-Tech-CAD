@@ -14,6 +14,10 @@ import { Viewport } from "./components/Viewport";
 
 type SourceMode = "parametric" | "imported";
 
+/** Bundled open LEO CubeSat structure (CERN-OHL-P). */
+const REFERENCE_STEP_URL = "/reference/OSCubeSatStruct_Mk5_3U.step";
+const REFERENCE_STEP_NAME = "OSCubeSatStruct Mk5 3U structure";
+
 function budgetsFromDoc(doc: SfdDocument) {
   const chassis = doc.parts.find((p) => p.id === "chassis");
   const w = chassis ? getParam(chassis, "widthMm", 100) : 100;
@@ -50,10 +54,10 @@ function budgetsFromDoc(doc: SfdDocument) {
   }
 
   ledger.assumptions.push(
-    "Educational L0 budgets from tagged Reference-3U parts — not a flight mass properties report",
+    "Budgets come from the educational SFD subsystem tags — independent of imported STEP visuals",
   );
   ledger.assumptions.push(
-    "CDS checks are soft educational guidelines; launch provider ICD supersedes",
+    "Default 3D model is OSCubeSatStruct Mk5 (open hardware). CDS checks use the parametric envelope.",
   );
 
   const budgetSummary = summarize(ledger);
@@ -104,64 +108,101 @@ export function App() {
   const [status, setStatus] = useState("Loading OpenCascade worker…");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<SourceMode>("parametric");
+  const [mode, setMode] = useState<SourceMode>("imported");
   const [importName, setImportName] = useState<string | null>(null);
+  const bootstrapped = useRef(false);
 
   const chassis = doc.parts.find((p) => p.id === "chassis");
   const widthMm = chassis ? getParam(chassis, "widthMm", 100) : 100;
   const depthMm = chassis ? getParam(chassis, "depthMm", 100) : 100;
   const heightMm = chassis ? getParam(chassis, "heightMm", 340.5) : 340.5;
 
-  const regenerate = useCallback(async (next: SfdDocument) => {
-    setBusy(true);
-    setError(null);
-    setStatus("Tessellating B-rep in worker…");
-    try {
-      const cad = getCadApi();
-      await cad.ready();
-      const result = await cad.createMesh(next);
-      const tris = result.faces.triangles.length / 3;
-      if (!Number.isFinite(tris) || tris <= 0) {
-        throw new Error("Kernel returned an empty mesh");
-      }
-      setMesh(result);
-      setMode("parametric");
-      setImportName(null);
-      setStatus(`Ready · ${Math.round(tris).toLocaleString()} triangles`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Kernel error";
-      setError(message);
-      setStatus("Kernel failed — see banner");
-      setMesh(null);
-    } finally {
-      setBusy(false);
+  const showMesh = useCallback(async (result: TessellationResult, label: string) => {
+    const tris = result.faces.triangles.length / 3;
+    if (!Number.isFinite(tris) || tris <= 0) {
+      throw new Error("Kernel returned an empty mesh");
     }
+    setMesh(result);
+    setStatus(`${label} · ${Math.round(tris).toLocaleString()} triangles`);
   }, []);
 
+  const importFromUrl = useCallback(
+    async (url: string, label: string) => {
+      setBusy(true);
+      setError(null);
+      setStatus(`Loading ${label}…`);
+      try {
+        const cad = getCadApi();
+        await cad.ready();
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Could not fetch ${url} (${res.status})`);
+        const blob = await res.blob();
+        const file = new File([blob], label.endsWith(".step") ? label : `${label}.step`, {
+          type: "application/step",
+        });
+        const result = await cad.importModel(file);
+        await showMesh(result, label);
+        setMode("imported");
+        setImportName(label);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Import failed";
+        setError(message);
+        setStatus("Import failed");
+        setMesh(null);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [showMesh],
+  );
+
+  const regenerateParametric = useCallback(
+    async (next: SfdDocument) => {
+      setBusy(true);
+      setError(null);
+      setStatus("Tessellating simple parametric frame…");
+      try {
+        const cad = getCadApi();
+        await cad.ready();
+        const result = await cad.createMesh(next);
+        await showMesh(result, "Simple parametric frame");
+        setMode("parametric");
+        setImportName(null);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Kernel error";
+        setError(message);
+        setStatus("Kernel failed — see banner");
+        setMesh(null);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [showMesh],
+  );
+
+  // Default: load the open 3U structure STEP (real CubeSat geometry)
   useEffect(() => {
-    if (mode === "imported") return;
-    void regenerate(doc);
-  }, [doc, regenerate, mode]);
+    if (bootstrapped.current) return;
+    bootstrapped.current = true;
+    void importFromUrl(REFERENCE_STEP_URL, REFERENCE_STEP_NAME);
+  }, [importFromUrl]);
+
+  useEffect(() => {
+    if (mode !== "parametric") return;
+    void regenerateParametric(doc);
+  }, [doc, mode, regenerateParametric]);
 
   async function downloadStep() {
+    if (mode !== "parametric") {
+      setError("Export STEP from parametric mode, or re-download the open structure file from Import.");
+      return;
+    }
     setBusy(true);
     try {
       const blob = await getCadApi().createStep(doc);
       saveAs(blob, `${doc.name.replace(/\s+/g, "_")}.step`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "STEP export failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function downloadStl() {
-    setBusy(true);
-    try {
-      const blob = await getCadApi().createStl(doc);
-      saveAs(blob, `${doc.name.replace(/\s+/g, "_")}.stl`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "STL export failed");
     } finally {
       setBusy(false);
     }
@@ -176,14 +217,9 @@ export function App() {
       const cad = getCadApi();
       await cad.ready();
       const result = await cad.importModel(file);
-      const tris = result.faces.triangles.length / 3;
-      if (!tris) throw new Error("Imported file produced an empty mesh");
-      setMesh(result);
+      await showMesh(result, file.name);
       setMode("imported");
       setImportName(file.name);
-      setStatus(
-        `Imported ${file.name} · ${Math.round(tris).toLocaleString()} triangles`,
-      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
       setStatus("Import failed");
@@ -201,21 +237,25 @@ export function App() {
       <header>
         <h1>Space Tech 3D</h1>
         <p>
-          CubeSat Phase A systems workbook — parametric OCCT geometry, subsystem
-          budgets, CDS checks, and STEP/STL import/export.
+          CubeSat Phase A workbook. Default 3D model is an <strong>open 3U
+          structure</strong> (OSCubeSatStruct Mk5). Budgets/scorecard stay on the
+          educational subsystem tags beside it.
         </p>
       </header>
 
       <div className="banner" role="note">
-        <strong>Not flight-qualified.</strong> Early MVP: richer than a blank
-        box, still educational L0 fidelity.{" "}
+        <strong>What you should see:</strong> a real CubeSat frame (rails +
+        endplates), roughly <strong>10 × 10 × 34 cm</strong> — the long axis is
+        the 3U height, not a bug. Orbit/drag to inspect.
+        <br />
+        <strong>Not flight-qualified.</strong>{" "}
         {mode === "imported" ? (
           <>
-            Viewing imported model <code>{importName}</code>.
+            Viewing <code>{importName}</code>.
           </>
         ) : (
           <>
-            Project <code>{doc.name}</code> · {doc.parts.length} parts.
+            Viewing simple parametric placeholder · project <code>{doc.name}</code>.
           </>
         )}
         {error ? (
@@ -230,12 +270,20 @@ export function App() {
         <button
           type="button"
           disabled={busy}
+          onClick={() => void importFromUrl(REFERENCE_STEP_URL, REFERENCE_STEP_NAME)}
+        >
+          Load open 3U structure
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy}
           onClick={() => {
             setMode("parametric");
             setDoc(createReference3UDocument());
           }}
         >
-          Load Reference-3U
+          Simple parametric demo
         </button>
         <button
           type="button"
@@ -243,7 +291,7 @@ export function App() {
           disabled={busy}
           onClick={() => fileRef.current?.click()}
         >
-          Import STEP / STL
+          Import your STEP / STL
         </button>
         <input
           ref={fileRef}
@@ -255,18 +303,10 @@ export function App() {
         <button
           type="button"
           className="secondary"
-          disabled={busy || mode === "imported"}
+          disabled={busy || mode !== "parametric"}
           onClick={() => void downloadStep()}
         >
-          Export STEP
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy || mode === "imported"}
-          onClick={() => void downloadStl()}
-        >
-          Export STL
+          Export parametric STEP
         </button>
       </div>
 
@@ -274,10 +314,25 @@ export function App() {
         <section className="panel viewport-panel">
           <h2>3D viewport</h2>
           <Viewport mesh={mesh} status={status} />
+          <p className="hint">
+            Source:{" "}
+            <a
+              href="https://github.com/elfenix7/OSCubeSatStruct"
+              target="_blank"
+              rel="noreferrer"
+            >
+              OSCubeSatStruct
+            </a>{" "}
+            (CERN-OHL-P). Bundled at <code>/reference/OSCubeSatStruct_Mk5_3U.step</code>.
+          </p>
         </section>
 
         <section className="panel">
-          <h2>Chassis envelope (mm)</h2>
+          <h2>Envelope for CDS checks (mm)</h2>
+          <p className="hint">
+            These numbers drive the scorecard/budgets. They do not reshape the
+            imported open structure (yet).
+          </p>
           <label className="field">
             <span>Width</span>
             <input
@@ -286,7 +341,7 @@ export function App() {
               max={120}
               step={0.5}
               value={widthMm}
-              disabled={busy || mode === "imported"}
+              disabled={busy}
               onChange={(e) =>
                 setDoc(setChassisParam(doc, "widthMm", Number(e.target.value)))
               }
@@ -300,7 +355,7 @@ export function App() {
               max={120}
               step={0.5}
               value={depthMm}
-              disabled={busy || mode === "imported"}
+              disabled={busy}
               onChange={(e) =>
                 setDoc(setChassisParam(doc, "depthMm", Number(e.target.value)))
               }
@@ -314,7 +369,7 @@ export function App() {
               max={400}
               step={0.5}
               value={heightMm}
-              disabled={busy || mode === "imported"}
+              disabled={busy}
               onChange={(e) =>
                 setDoc(setChassisParam(doc, "heightMm", Number(e.target.value)))
               }
@@ -345,7 +400,7 @@ export function App() {
         </section>
 
         <section className="panel">
-          <h2>Subsystems</h2>
+          <h2>Subsystems (workbook)</h2>
           {subsystems.map(([name, parts]) => (
             <div className="subsystem" key={name}>
               <div className="subsystem-title">{name}</div>
@@ -385,8 +440,8 @@ export function App() {
       </div>
 
       <footer>
-        Import accepts STEP/STL for visualization. Parametric edits require the
-        Reference-3U (or future SFD) model. Apache-2.0 · see EXPORT_CONTROL.md
+        Build around the open 3U structure, or import another CubeSat STEP from
+        LibreCube / university repos. Apache-2.0 app · see EXPORT_CONTROL.md
       </footer>
     </main>
   );
