@@ -6,13 +6,14 @@ import {
   getParam,
   serializeDocument,
 } from "@spacetech/sfd-lang";
-import { createEmptyLedger, summarize } from "@spacetech/budgets";
+import { bomFromDocument, ledgerFromDocument, summarize } from "@spacetech/budgets";
 import { runCdsScorecard } from "@spacetech/rules-cds";
+import { createReference3USystemsPack } from "@spacetech/systems";
 
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "127.0.0.1";
 
-/** In-memory project store for MVP-1 scaffolding */
+/** In-memory project store for MVP scaffolding */
 const projects = new Map<string, { id: string; name: string; sfd: string }>();
 
 export function buildServer() {
@@ -27,25 +28,16 @@ export function buildServer() {
     const d = chassis ? getParam(chassis, "depthMm", 100) : 100;
     const h = chassis ? getParam(chassis, "heightMm", 340.5) : 340.5;
 
-    const ledger = createEmptyLedger();
-    ledger.massItems.push({
-      id: "structure",
-      name: "Structure (placeholder)",
-      massKg: 1.5,
-      cgMm: { x: 0, y: 0, z: h / 2 },
-    });
-    ledger.powerItems.push({
-      id: "bus",
-      name: "Bus loads (placeholder)",
-      wattsByMode: { safe: 1, nominal: 3, peak: 5, eclipse: 2 },
-    });
-    ledger.assumptions.push("MVP placeholder masses — not a flight design");
-
+    const ledger = ledgerFromDocument(doc);
     const summary = summarize(ledger);
     const scorecard = runCdsScorecard({
       units: 3,
       envelopeMm: { x: w, y: d, z: h },
       totalMassKg: summary.totalMassKg,
+      cgMm: summary.cgMm,
+      solarGenerationW: summary.solarGenerationW,
+      nominalLoadW: summary.powerByMode.nominal,
+      railProtrusionMm: 5,
     });
 
     return {
@@ -53,18 +45,39 @@ export function buildServer() {
       sfd: serializeDocument(doc),
       budgetSummary: summary,
       scorecard,
-      disclaimer: "Not flight-qualified. Educational placeholder data.",
+      bom: bomFromDocument(doc),
+      systems: createReference3USystemsPack(),
+      disclaimer: "Not flight-qualified. Educational L0 data.",
     };
   });
 
-  app.post<{ Body: { name?: string } }>("/v1/projects", async (req) => {
+  app.post<{ Body: { name?: string; sfd?: string } }>("/v1/projects", async (req) => {
     const id = crypto.randomUUID();
     const name = req.body?.name?.trim() || "Untitled";
-    const sfd = serializeDocument(createEmptyDocument(name));
+    const sfd =
+      req.body?.sfd?.trim() ||
+      serializeDocument(createEmptyDocument(name));
     const project = { id, name, sfd };
     projects.set(id, project);
     return project;
   });
+
+  app.put<{ Params: { id: string }; Body: { name?: string; sfd?: string } }>(
+    "/v1/projects/:id",
+    async (req, reply) => {
+      const existing = projects.get(req.params.id);
+      if (!existing) {
+        return reply.code(404).send({ error: "not_found" });
+      }
+      const project = {
+        id: existing.id,
+        name: req.body?.name?.trim() || existing.name,
+        sfd: req.body?.sfd?.trim() || existing.sfd,
+      };
+      projects.set(project.id, project);
+      return project;
+    },
+  );
 
   app.get<{ Params: { id: string } }>("/v1/projects/:id", async (req, reply) => {
     const project = projects.get(req.params.id);

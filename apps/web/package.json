@@ -17,6 +17,7 @@
     "@spacetech/kernel-bridge": "workspace:^",
     "@spacetech/rules-cds": "workspace:*",
     "@spacetech/sfd-lang": "workspace:*",
+    "@spacetech/systems": "workspace:*",
     "comlink": "4.4.2",
     "file-saver": "2.0.5",
     "react": "^19.0.0",

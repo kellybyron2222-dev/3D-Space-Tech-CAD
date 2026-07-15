@@ -1,5 +1,5 @@
 {
-  "name": "@spacetech/budgets",
+  "name": "@spacetech/systems",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -16,9 +16,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test src/**/*.test.ts",
     "lint": "echo \"no lint configured yet\""
-  },
-  "dependencies": {
-    "@spacetech/sfd-lang": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

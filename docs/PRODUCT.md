@@ -6,13 +6,14 @@
 
 ## MVP (in scope)
 
-- Browser app + parametric Reference-3U template
+- Browser app + parametric **Reference-3U** template (LibreCube-tagged)
+- Default open-hardware **OSCubeSatStruct Mk5** STEP visual
 - **OCCT / Replicad Web Worker** (B-rep truth, mesh display)
-- Mass / CG and **mode-based** power budgets + L0 thermal flags
-- CDS-style scorecard (envelope, mass, deployer keep-outs)
-- VCRM-lite + ICD stubs + assumption registry (next)
-- Export STEP (+ STL); CDR PDF + BOM CSV (next)
-- FreeCAD STEP roundtrip; university curriculum notes (next)
+- Mass / CG and **mode-based** power budgets + **L0 thermal** + PV generation from panel area
+- CDS-style scorecard (envelope, mass, CG, deployer keep-out, soft power)
+- **VCRM-lite** + **ICD stubs** + assumption registry
+- Export STEP (parametric), **BOM CSV**, **CDR Markdown**, project JSON
+- FreeCAD STEP roundtrip; PWA (next)
 - Physics-informed + soft-constrained (deterministic solvers are authority)
 
 ## Out of MVP
@@ -26,7 +27,7 @@
 ## Principles
 
 1. B-rep (OpenCascade) is geometry truth; mesh is display only
-2. Budgets stay bound to geometry parameters
+2. Budgets stay bound to geometry parameters (panel area → PV watts)
 3. Honest fidelity labels (`L0` / later `L1` / `L2`)
 4. Not flight-qualified — engineers refine and export to professional CAD/CAE
 

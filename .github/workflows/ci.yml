@@ -30,3 +30,6 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Validate bundled open CubeSat STEP
+        run: node scripts/validate-step.mjs

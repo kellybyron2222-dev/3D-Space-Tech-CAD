@@ -14,6 +14,9 @@ describe("api", () => {
     const body = demo.json();
     assert.equal(body.document.name, "Reference-3U");
     assert.ok(Array.isArray(body.scorecard));
+    assert.ok(Array.isArray(body.bom));
+    assert.ok(body.systems?.vcrm?.length >= 1);
+    assert.ok(body.budgetSummary.solarGenerationW > 0);
     await app.close();
   });
 });

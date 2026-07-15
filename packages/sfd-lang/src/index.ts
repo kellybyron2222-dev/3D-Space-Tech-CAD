@@ -52,6 +52,14 @@ export interface SfdDocument {
   revision?: string;
 }
 
+/** Persistable workbook project (SFD + optional UI notes). */
+export interface SfdProjectFile {
+  format: "spacetech-project";
+  formatVersion: 1;
+  savedAt: string;
+  document: SfdDocument;
+}
+
 export function createEmptyDocument(name: string): SfdDocument {
   return {
     version: 0,
@@ -65,6 +73,72 @@ export function getParam(part: SfdPart, name: string, fallback = 0): number {
   return part.params.find((p) => p.name === name)?.value ?? fallback;
 }
 
+export function setPartParam(
+  doc: SfdDocument,
+  partId: string,
+  name: string,
+  value: number,
+): SfdDocument {
+  return {
+    ...doc,
+    parts: doc.parts.map((part) => {
+      if (part.id !== partId) return part;
+      const has = part.params.some((p) => p.name === name);
+      return {
+        ...part,
+        params: has
+          ? part.params.map((p) => (p.name === name ? { ...p, value } : p))
+          : [...part.params, { name, value, unit: "1" }],
+      };
+    }),
+  };
+}
+
+export function setPartMass(
+  doc: SfdDocument,
+  partId: string,
+  massKg: number,
+): SfdDocument {
+  return {
+    ...doc,
+    parts: doc.parts.map((part) =>
+      part.id === partId ? { ...part, massKg } : part,
+    ),
+  };
+}
+
+export function setPartWatts(
+  doc: SfdDocument,
+  partId: string,
+  patch: Partial<
+    Pick<SfdPart, "wattsNominal" | "wattsPeak" | "wattsSafe" | "wattsEclipse">
+  >,
+): SfdDocument {
+  return {
+    ...doc,
+    parts: doc.parts.map((part) =>
+      part.id === partId ? { ...part, ...patch } : part,
+    ),
+  };
+}
+
+export function toProjectFile(doc: SfdDocument): SfdProjectFile {
+  return {
+    format: "spacetech-project",
+    formatVersion: 1,
+    savedAt: new Date().toISOString(),
+    document: doc,
+  };
+}
+
+export function parseProjectFile(raw: string): SfdDocument {
+  const parsed = JSON.parse(raw) as SfdProjectFile | SfdDocument;
+  if ("format" in parsed && parsed.format === "spacetech-project") {
+    return parseDocument(JSON.stringify(parsed.document));
+  }
+  return parseDocument(raw);
+}
+
 /** Educational Reference-3U with LibreCube-tagged subsystems (mm). */
 export function createReference3UDocument(): SfdDocument {
   return {
@@ -72,6 +146,26 @@ export function createReference3UDocument(): SfdDocument {
     name: "Reference-3U",
     units: "si",
     parts: [
+      {
+        id: "mission",
+        name: "Mission parameters",
+        kind: "generic",
+        subsystem: "navigation",
+        params: [
+          {
+            name: "eclipseFraction",
+            value: 0.35,
+            unit: "1",
+            description: "Manual LEO eclipse fraction (Orekit later)",
+          },
+          {
+            name: "units",
+            value: 3,
+            unit: "U",
+            description: "CubeSat form factor",
+          },
+        ],
+      },
       {
         id: "chassis",
         name: "Primary structure envelope",
