@@ -1,5 +1,5 @@
 import { wrap, type Remote } from "comlink";
-import type { CadWorkerApi } from "./worker";
+import type { CadWorkerApi } from "./types";
 
 let api: Remote<CadWorkerApi> | null = null;
 

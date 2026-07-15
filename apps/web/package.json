@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --force",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -12,7 +12,6 @@
     "lint": "echo \"no lint configured yet\""
   },
   "dependencies": {
-    "@react-three/drei": "10.7.7",
     "@react-three/fiber": "9.0.0",
     "@spacetech/budgets": "workspace:*",
     "@spacetech/kernel-bridge": "workspace:^",

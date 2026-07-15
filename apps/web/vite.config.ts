@@ -8,9 +8,19 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ["replicad-opencascadejs"],
+    include: [
+      "react",
+      "react-dom",
+      "react/jsx-runtime",
+      "@react-three/fiber",
+      "three",
+      "comlink",
+      "file-saver",
+    ],
   },
   server: {
-    port: 5173,
+    port: 5174,
+    strictPort: true,
     proxy: {
       "/v1": "http://127.0.0.1:8787",
       "/health": "http://127.0.0.1:8787",
