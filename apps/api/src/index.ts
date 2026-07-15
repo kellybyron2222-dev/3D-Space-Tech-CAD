@@ -1,6 +1,11 @@
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
-import { createEmptyDocument, serializeDocument } from "@spacetech/sfd-lang";
+import {
+  createEmptyDocument,
+  createReference3UDocument,
+  getParam,
+  serializeDocument,
+} from "@spacetech/sfd-lang";
 import { createEmptyLedger, summarize } from "@spacetech/budgets";
 import { runCdsScorecard } from "@spacetech/rules-cds";
 
@@ -16,25 +21,30 @@ export function buildServer() {
   app.get("/health", async () => ({ ok: true, service: "spacetech-api" }));
 
   app.get("/v1/demo/reference-3u", async () => {
-    const doc = createEmptyDocument("Reference-3U");
+    const doc = createReference3UDocument();
+    const chassis = doc.parts.find((p) => p.id === "chassis");
+    const w = chassis ? getParam(chassis, "widthMm", 100) : 100;
+    const d = chassis ? getParam(chassis, "depthMm", 100) : 100;
+    const h = chassis ? getParam(chassis, "heightMm", 340.5) : 340.5;
+
     const ledger = createEmptyLedger();
     ledger.massItems.push({
       id: "structure",
       name: "Structure (placeholder)",
       massKg: 1.5,
-      cgMm: { x: 0, y: 0, z: 170 },
+      cgMm: { x: 0, y: 0, z: h / 2 },
     });
     ledger.powerItems.push({
       id: "bus",
       name: "Bus loads (placeholder)",
       wattsByMode: { safe: 1, nominal: 3, peak: 5, eclipse: 2 },
     });
-    ledger.assumptions.push("MVP-1 placeholder masses — not a flight design");
+    ledger.assumptions.push("MVP placeholder masses — not a flight design");
 
     const summary = summarize(ledger);
     const scorecard = runCdsScorecard({
       units: 3,
-      envelopeMm: { x: 100, y: 100, z: 340.5 },
+      envelopeMm: { x: w, y: d, z: h },
       totalMassKg: summary.totalMassKg,
     });
 

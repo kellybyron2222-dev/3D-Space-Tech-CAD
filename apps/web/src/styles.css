@@ -124,15 +124,52 @@ header p {
   margin-top: 0.2rem;
 }
 
-.viewport {
-  min-height: 220px;
+.viewport-panel {
+  min-height: 360px;
+}
+
+.viewport-canvas {
+  position: relative;
+  height: 320px;
+  border: 1px solid var(--line);
+  background: #faf8f3;
+  overflow: hidden;
+}
+
+.viewport-canvas canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+.viewport-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   display: grid;
   place-items: center;
-  border: 1px dashed var(--line);
   color: var(--muted);
-  background: #faf8f3;
-  text-align: center;
+  pointer-events: none;
+  background: rgba(250, 248, 243, 0.72);
   padding: 1rem;
+  text-align: center;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.55rem;
+  font-size: 0.95rem;
+}
+
+.field input {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  background: #fff;
+  font: inherit;
 }
 
 button {

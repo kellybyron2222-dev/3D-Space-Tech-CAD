@@ -6,7 +6,7 @@ Open-source **CubeSat Phase A systems workbook**: parametric 3D geometry, mass/p
 
 ## Status
 
-Early scaffolding. MVP target: Reference-3U template, mode-based budgets, CDS scorecard, STEP + CDR PDF export.
+**MVP-2 in progress:** Reference-3U parametric chassis in an OpenCascade (Replicad) Web Worker, three.js viewport, STEP/STL export, live L0 budgets + CDS scorecard.
 
 Repository: [kellybyron2222-dev/3D-Space-Tech-CAD](https://github.com/kellybyron2222-dev/3D-Space-Tech-CAD)
 

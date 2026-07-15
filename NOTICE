@@ -4,9 +4,22 @@ Copyright 2026 Space Tech 3D / SpaceForge contributors
 This product is licensed under the Apache License, Version 2.0.
 See the LICENSE file for the full license text.
 
-This product will incorporate third-party software. Attribution for
-dependencies (including OpenCascade Technology / opencascade.js /
-Replicad, which may be subject to LGPL terms) will be listed here as
-those packages are added to the repository.
+-------------------------------------------------------------------------------
+Third-party notices
+
+OpenCascade Technology (OCCT) is used via the Replicad / replicad-opencascadejs
+WebAssembly bindings for B-rep geometry operations in the browser.
+
+- Replicad: MIT License — https://github.com/sgenoud/replicad
+- replicad-opencascadejs: wraps OpenCascade builds for Replicad
+- OpenCascade Technology: GNU LGPL 2.1 (with OCCT exception) —
+  https://dev.opencascade.org/resources/license
+
+When distributing binaries that include the OCCT WASM module, comply with the
+applicable LGPL obligations (including offering corresponding source for the
+OCCT portions as required by that license).
+
+Additional npm dependency licenses are available from each package's LICENSE
+file in node_modules / the lockfile dependency tree.
 
 Do not remove this NOTICE file from distributions.

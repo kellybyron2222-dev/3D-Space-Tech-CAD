@@ -7,11 +7,12 @@
 ## MVP (in scope)
 
 - Browser app + parametric Reference-3U template
+- **OCCT / Replicad Web Worker** (B-rep truth, mesh display)
 - Mass / CG and **mode-based** power budgets + L0 thermal flags
 - CDS-style scorecard (envelope, mass, deployer keep-outs)
-- VCRM-lite + ICD stubs + assumption registry
-- Export STEP + CDR PDF + BOM CSV
-- FreeCAD STEP roundtrip; university curriculum notes
+- VCRM-lite + ICD stubs + assumption registry (next)
+- Export STEP (+ STL); CDR PDF + BOM CSV (next)
+- FreeCAD STEP roundtrip; university curriculum notes (next)
 - Physics-informed + soft-constrained (deterministic solvers are authority)
 
 ## Out of MVP
