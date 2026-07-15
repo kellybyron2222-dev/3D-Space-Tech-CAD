@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Builds
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.next/
+out/
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+
+# WASM / CAD caches
+*.wasm.cache
+.occt-cache/
+.replicad-cache/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# Logs and temp
+*.log
+npm-debug.log*
+pnpm-debug.log*
+tmp/
+temp/
+.cache/
+
+# Test artifacts
+playwright-report/
+test-results/

@@ -1,0 +1,17 @@
+services:
+  api:
+    image: node:22-bookworm-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: bash -lc "corepack enable && pnpm install && pnpm --filter @spacetech/api start"
+    ports:
+      - "8787:8787"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+    profiles:
+      - full
+
+# Default self-host path for MVP is: pnpm install && pnpm build && pnpm --filter @spacetech/api start
+# Compose profile "full" is optional for contributors who prefer containers.

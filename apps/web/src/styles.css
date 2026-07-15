@@ -1,0 +1,169 @@
+:root {
+  color-scheme: light;
+  --bg: #f3f1ec;
+  --ink: #141820;
+  --muted: #5c6570;
+  --panel: #fffdf8;
+  --line: #d5d0c6;
+  --pass: #1f6b4a;
+  --fail: #9b2c2c;
+  --accent: #0b3d5c;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #dce7f0 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #e7e0d4 0%, transparent 50%),
+    var(--bg);
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+header h1 {
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-weight: 600;
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  letter-spacing: -0.02em;
+  margin: 0 0 0.35rem;
+  color: var(--accent);
+}
+
+header p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 40rem;
+}
+
+.banner {
+  margin: 1.25rem 0 1.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 0.92rem;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 800px) {
+  .grid {
+    grid-template-columns: 1.1fr 0.9fr;
+  }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 1rem 1.1rem;
+}
+
+.panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat:last-child {
+  border-bottom: 0;
+}
+
+.check {
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.check:last-child {
+  border-bottom: 0;
+}
+
+.check .status {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.check .status.pass {
+  color: var(--pass);
+}
+
+.check .status.fail {
+  color: var(--fail);
+}
+
+.citation {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: 0.2rem;
+}
+
+.viewport {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  background: #faf8f3;
+  text-align: center;
+  padding: 1rem;
+}
+
+button {
+  appearance: none;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  padding: 0.55rem 0.9rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0 1.5rem;
+}
+
+footer {
+  margin-top: 2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
