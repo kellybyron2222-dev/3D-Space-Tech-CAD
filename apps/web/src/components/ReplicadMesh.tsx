@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import { useThree } from "@react-three/fiber";
-import { BufferGeometry } from "three";
+import { BufferGeometry, Color, DoubleSide } from "three";
 import {
   syncFaces,
   syncLines,
@@ -10,40 +10,53 @@ import {
 } from "replicad-threejs-helper";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
 
-export function ReplicadMesh({ faces, edges }: TessellationResult) {
+export function ReplicadMesh({
+  faces,
+  edges,
+  color = "#5f7d95",
+}: TessellationResult & { color?: string }) {
   const { invalidate } = useThree();
-  const body = useRef(new BufferGeometry());
-  const lines = useRef(new BufferGeometry());
 
-  useLayoutEffect(() => {
-    if (faces) syncFaces(body.current, faces as ReplicadMeshedFaces);
-    if (edges) syncLines(lines.current, edges as ReplicadMeshedEdges);
-    else if (faces) syncLinesFromFaces(lines.current, body.current);
+  const { body, lines } = useMemo(() => {
+    const nextBody = new BufferGeometry();
+    const nextLines = new BufferGeometry();
+    if (faces?.vertices?.length) {
+      syncFaces(nextBody, faces as ReplicadMeshedFaces);
+      if (edges?.lines?.length) {
+        syncLines(nextLines, edges as ReplicadMeshedEdges);
+      } else {
+        syncLinesFromFaces(nextLines, nextBody);
+      }
+    }
+    return { body: nextBody, lines: nextLines };
+  }, [faces, edges]);
+
+  useEffect(() => {
     invalidate();
-  }, [faces, edges, invalidate]);
-
-  useEffect(
-    () => () => {
-      body.current.dispose();
-      lines.current.dispose();
+    return () => {
+      body.dispose();
+      lines.dispose();
       invalidate();
-    },
-    [invalidate],
-  );
+    };
+  }, [body, lines, invalidate]);
+
+  const triCount = faces?.triangles?.length ? faces.triangles.length / 3 : 0;
+  if (triCount === 0) return null;
 
   return (
     <group>
-      <mesh geometry={body.current}>
+      <mesh geometry={body}>
         <meshStandardMaterial
-          color="#7a8fa3"
-          metalness={0.25}
-          roughness={0.45}
+          color={new Color(color)}
+          metalness={0.2}
+          roughness={0.4}
+          side={DoubleSide}
           polygonOffset
           polygonOffsetFactor={1}
         />
       </mesh>
-      <lineSegments geometry={lines.current}>
-        <lineBasicMaterial color="#1a2330" />
+      <lineSegments geometry={lines}>
+        <lineBasicMaterial color="#15202b" />
       </lineSegments>
     </group>
   );

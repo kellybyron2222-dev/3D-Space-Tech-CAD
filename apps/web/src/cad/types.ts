@@ -6,4 +6,5 @@ export type CadWorkerApi = {
   createMesh(doc: SfdDocument): Promise<TessellationResult>;
   createStep(doc: SfdDocument): Promise<Blob>;
   createStl(doc: SfdDocument): Promise<Blob>;
+  importModel(file: File): Promise<TessellationResult>;
 };

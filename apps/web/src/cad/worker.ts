@@ -1,5 +1,11 @@
 import { expose } from "comlink";
-import { setOC } from "replicad";
+import {
+  importSTEP,
+  importSTL,
+  setOC,
+  type AnyShape,
+  type Shape3D,
+} from "replicad";
 import opencascade from "replicad-opencascadejs/src/replicad_single.js";
 import opencascadeWasm from "replicad-opencascadejs/src/replicad_single.wasm?url";
 import type { SfdDocument } from "@spacetech/sfd-lang";
@@ -13,12 +19,28 @@ async function initOc(): Promise<void> {
   const OC = await opencascade({
     locateFile: () => opencascadeWasm,
   });
-  // WASM factory typing is loose across replicad-opencascadejs builds
   setOC(OC as Parameters<typeof setOC>[0]);
   loaded = true;
 }
 
 const started = initOc();
+
+function toPlainMesh(shape: Shape3D): TessellationResult {
+  const faces = shape.mesh({ tolerance: 0.15, angularTolerance: 0.6 });
+  const edges = shape.meshEdges({ tolerance: 0.15, angularTolerance: 0.6 });
+  // Plain arrays survive Comlink structured clone reliably
+  return {
+    faces: {
+      vertices: Array.from(faces.vertices),
+      normals: Array.from(faces.normals),
+      triangles: Array.from(faces.triangles),
+      faceGroups: faces.faceGroups?.map((g) => ({ ...g })),
+    },
+    edges: {
+      lines: Array.from(edges.lines ?? []),
+    },
+  };
+}
 
 const api = {
   async ready(): Promise<boolean> {
@@ -28,13 +50,7 @@ const api = {
 
   async createMesh(doc: SfdDocument): Promise<TessellationResult> {
     await started;
-    const shape = buildShapeFromSfd(doc);
-    const faces = shape.mesh({ tolerance: 0.1, angularTolerance: 0.5 });
-    const edges = shape.meshEdges({ tolerance: 0.1, angularTolerance: 0.5 });
-    return {
-      faces: faces as TessellationResult["faces"],
-      edges: edges as TessellationResult["edges"],
-    };
+    return toPlainMesh(buildShapeFromSfd(doc));
   },
 
   async createStep(doc: SfdDocument): Promise<Blob> {
@@ -45,9 +61,26 @@ const api = {
   async createStl(doc: SfdDocument): Promise<Blob> {
     await started;
     return buildShapeFromSfd(doc).blobSTL({
-      tolerance: 0.1,
-      angularTolerance: 0.5,
+      tolerance: 0.15,
+      angularTolerance: 0.6,
     });
+  },
+
+  async importModel(file: File): Promise<TessellationResult> {
+    await started;
+    const name = file.name.toLowerCase();
+    let shape: AnyShape;
+    if (name.endsWith(".stl")) {
+      shape = await importSTL(file);
+    } else if (name.endsWith(".step") || name.endsWith(".stp")) {
+      shape = await importSTEP(file);
+    } else {
+      throw new Error("Unsupported file type. Use .step/.stp or .stl");
+    }
+    if (!("mesh" in shape) || typeof shape.mesh !== "function") {
+      throw new Error("Imported geometry cannot be meshed");
+    }
+    return toPlainMesh(shape as Shape3D);
   },
 };
 

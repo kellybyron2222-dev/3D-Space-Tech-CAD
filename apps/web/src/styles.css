@@ -63,7 +63,7 @@ header p {
 
 @media (min-width: 800px) {
   .grid {
-    grid-template-columns: 1.1fr 0.9fr;
+    grid-template-columns: 1.35fr 0.95fr;
   }
 }
 
@@ -153,6 +153,49 @@ header p {
   background: rgba(250, 248, 243, 0.72);
   padding: 1rem;
   text-align: center;
+}
+
+.viewport-hud {
+  position: absolute;
+  left: 0.6rem;
+  top: 0.55rem;
+  z-index: 2;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: rgba(255, 253, 248, 0.88);
+  border: 1px solid var(--line);
+  padding: 0.2rem 0.45rem;
+  pointer-events: none;
+}
+
+.error-text {
+  color: var(--fail);
+  font-weight: 600;
+}
+
+.subsystem {
+  margin-bottom: 0.75rem;
+}
+
+.subsystem-title {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.subsystem ul,
+.assumptions {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.subsystem li,
+.assumptions li {
+  margin: 0.2rem 0;
 }
 
 .field {
