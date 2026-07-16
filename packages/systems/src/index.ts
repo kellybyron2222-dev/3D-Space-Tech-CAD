@@ -30,6 +30,8 @@ export interface IcdStub {
   interfaceTo: string;
   notes: string;
   openItems: string[];
+  /** Open items the team has checked off (still listed for context) */
+  resolvedOpenItems?: string[];
 }
 
 export interface SystemsPack {

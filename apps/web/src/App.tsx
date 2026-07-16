@@ -3,30 +3,42 @@ import { saveAs } from "file-saver";
 import {
   createReference3UDocument,
   getParam,
-  parseProjectFile,
   setPartMass,
   setPartParam,
   setPartWatts,
-  toProjectFile,
   type SfdDocument,
   type SfdPart,
 } from "@spacetech/sfd-lang";
 import type { CdsCheckResult } from "@spacetech/rules-cds";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
+import {
+  createReference3USystemsPack,
+  type EvidenceStatus,
+  type SystemsPack,
+} from "@spacetech/systems";
 import { getCadApi } from "./cad/client";
 import { Viewport } from "./components/Viewport";
+import { parseAppProjectFile, toAppProjectFile } from "./projectIO";
+import {
+  buildNextSteps,
+  primaryPowerMargin,
+  suggestPanelHeightMm,
+  tabForCheck,
+  worstCdsStatus,
+  type TabId,
+} from "./ux";
 import {
   analyzeWorkbook,
   exportBomCsv,
+  exportCdrHtml,
   exportCdrMarkdown,
 } from "./workbook";
 
 type SourceMode = "parametric" | "imported";
-type TabId = "design" | "budgets" | "scorecard" | "systems" | "export";
 
 const REFERENCE_STEP_URL = "/reference/OSCubeSatStruct_Mk5_3U.step";
 const REFERENCE_STEP_NAME = "OSCubeSatStruct Mk5 3U structure";
-const STORAGE_KEY = "spacetech.reference3u.project";
+const STORAGE_KEY = "spacetech.reference3u.project.v2";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "design", label: "Design" },
@@ -58,7 +70,10 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const projectRef = useRef<HTMLInputElement>(null);
   const [doc, setDoc] = useState<SfdDocument>(() => createReference3UDocument());
-  const workbook = useMemo(() => analyzeWorkbook(doc), [doc]);
+  const [systems, setSystems] = useState<SystemsPack>(() =>
+    createReference3USystemsPack(),
+  );
+  const workbook = useMemo(() => analyzeWorkbook(doc, systems), [doc, systems]);
   const [mesh, setMesh] = useState<TessellationResult | null>(null);
   const [status, setStatus] = useState("Loading OpenCascade worker…");
   const [busy, setBusy] = useState(false);
@@ -66,6 +81,8 @@ export function App() {
   const [mode, setMode] = useState<SourceMode>("imported");
   const [importName, setImportName] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("design");
+  const [fitNonce, setFitNonce] = useState(0);
+  const [guideOpen, setGuideOpen] = useState(true);
   const bootstrapped = useRef(false);
 
   const chassis = doc.parts.find((p) => p.id === "chassis");
@@ -77,6 +94,24 @@ export function App() {
     ? getParam(mission, "eclipseFraction", 0.35)
     : 0.35;
 
+  const nextSteps = useMemo(
+    () =>
+      buildNextSteps({
+        scorecard: workbook.scorecard,
+        budgetSummary: workbook.budgetSummary,
+        systems,
+        mode,
+      }),
+    [workbook.scorecard, workbook.budgetSummary, systems, mode],
+  );
+  const powerMargin = primaryPowerMargin(workbook.budgetSummary);
+  const cdsWorst = worstCdsStatus(workbook.scorecard);
+  const suggestedPanelH = useMemo(
+    () =>
+      suggestPanelHeightMm(doc, workbook.budgetSummary.powerByMode.nominal),
+    [doc, workbook.budgetSummary.powerByMode.nominal],
+  );
+
   const showMesh = useCallback(async (result: TessellationResult, label: string) => {
     const tris = result.faces.triangles.length / 3;
     if (!Number.isFinite(tris) || tris <= 0) {
@@ -84,6 +119,7 @@ export function App() {
     }
     setMesh(result);
     setStatus(`${label} · ${Math.round(tris).toLocaleString()} triangles`);
+    setFitNonce((n) => n + 1);
   }, []);
 
   const importFromUrl = useCallback(
@@ -122,12 +158,12 @@ export function App() {
     async (next: SfdDocument) => {
       setBusy(true);
       setError(null);
-      setStatus("Tessellating simple parametric frame…");
+      setStatus("Tessellating parametric frame…");
       try {
         const cad = getCadApi();
         await cad.ready();
         const result = await cad.createMesh(next);
-        await showMesh(result, "Simple parametric frame");
+        await showMesh(result, "Parametric frame");
         setMode("parametric");
         setImportName(null);
       } catch (err) {
@@ -147,7 +183,11 @@ export function App() {
     bootstrapped.current = true;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setDoc(parseProjectFile(raw));
+      if (raw) {
+        const loaded = parseAppProjectFile(raw);
+        setDoc(loaded.document);
+        setSystems(loaded.systems);
+      }
     } catch {
       /* ignore corrupt local draft */
     }
@@ -156,11 +196,14 @@ export function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(toProjectFile(doc)));
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(toAppProjectFile(doc, systems)),
+      );
     } catch {
       /* quota / private mode */
     }
-  }, [doc]);
+  }, [doc, systems]);
 
   useEffect(() => {
     if (mode !== "parametric") return;
@@ -169,9 +212,8 @@ export function App() {
 
   async function downloadStep() {
     if (mode !== "parametric") {
-      setError(
-        "Export STEP from parametric mode, or re-download the open structure via Load open 3U structure.",
-      );
+      setError("Switch to Show parametric frame first, then export STEP.");
+      setTab("export");
       return;
     }
     setBusy(true);
@@ -207,9 +249,10 @@ export function App() {
   }
 
   function saveProject() {
-    const blob = new Blob([JSON.stringify(toProjectFile(doc), null, 2)], {
-      type: "application/json",
-    });
+    const blob = new Blob(
+      [JSON.stringify(toAppProjectFile(doc, systems), null, 2)],
+      { type: "application/json" },
+    );
     saveAs(blob, `${doc.name.replace(/\s+/g, "_")}.spacetech.json`);
   }
 
@@ -217,7 +260,9 @@ export function App() {
     if (!file) return;
     try {
       const text = await file.text();
-      setDoc(parseProjectFile(text));
+      const loaded = parseAppProjectFile(text);
+      setDoc(loaded.document);
+      setSystems(loaded.systems);
       setError(null);
       setTab("design");
     } catch (err) {
@@ -225,6 +270,43 @@ export function App() {
     } finally {
       if (projectRef.current) projectRef.current.value = "";
     }
+  }
+
+  function resetWorkbookKeepVisual() {
+    setDoc(createReference3UDocument());
+    setSystems(createReference3USystemsPack());
+    setError(null);
+    if (mode !== "imported") {
+      void importFromUrl(REFERENCE_STEP_URL, REFERENCE_STEP_NAME);
+    }
+  }
+
+  function setVcrmStatus(id: string, statusValue: EvidenceStatus) {
+    setSystems((prev) => ({
+      ...prev,
+      vcrm: prev.vcrm.map((row) =>
+        row.id === id ? { ...row, status: statusValue } : row,
+      ),
+    }));
+  }
+
+  function toggleIcdItem(icdId: string, item: string) {
+    setSystems((prev) => ({
+      ...prev,
+      icds: prev.icds.map((icd) => {
+        if (icd.id !== icdId) return icd;
+        const resolved = new Set(icd.resolvedOpenItems ?? []);
+        if (resolved.has(item)) resolved.delete(item);
+        else resolved.add(item);
+        return { ...icd, resolvedOpenItems: [...resolved] };
+      }),
+    }));
+  }
+
+  function applySuggestedPanelHeight() {
+    if (suggestedPanelH == null) return;
+    setDoc(setBothPanelHeights(doc, suggestedPanelH));
+    setTab("design");
   }
 
   function downloadBom() {
@@ -243,7 +325,15 @@ export function App() {
     );
   }
 
-  const { budgetSummary, scorecard, systems, scorecardLine } = workbook;
+  function downloadCdrHtml() {
+    const html = exportCdrHtml(doc, workbook);
+    saveAs(
+      new Blob([html], { type: "text/html;charset=utf-8" }),
+      `${doc.name.replace(/\s+/g, "_")}_CDR.html`,
+    );
+  }
+
+  const { budgetSummary, scorecard, scorecardLine } = workbook;
   const subsystems = groupParts(doc.parts);
   const editableBoards = doc.parts.filter(
     (p) => p.kind === "board" || p.subsystem === "payload",
@@ -251,31 +341,84 @@ export function App() {
 
   return (
     <main>
-      <header>
-        <h1>Space Tech 3D</h1>
-        <p>
-          CubeSat Phase A workbook — open 3U structure visual + live mass/power
-          budgets, CDS scorecard, VCRM/ICD stubs.
-        </p>
+      <header className="app-header">
+        <div>
+          <h1>Space Tech 3D</h1>
+          <p>CubeSat Phase A workbook for university teams.</p>
+        </div>
+        <p className="disclaimer-pill">Not flight-qualified · L0</p>
       </header>
 
-      <div className="banner" role="note">
-        <strong>Not flight-qualified.</strong> Change solar panel height or
-        subsystem watts and watch margins / scorecard update.{" "}
-        {mode === "imported" ? (
-          <>
-            Viewing <code>{importName}</code>.
-          </>
-        ) : (
-          <>
-            Viewing parametric frame · <code>{doc.name}</code>.
-          </>
-        )}
-        {error ? (
-          <>
-            <br />
-            <span className="error-text">Error: {error}</span>
-          </>
+      <div className={`status-strip status-${cdsWorst}`} role="status">
+        <button type="button" className="strip-chip" onClick={() => setTab("budgets")}>
+          <span>Mass</span>
+          <strong>{budgetSummary.totalMassKg.toFixed(2)} kg</strong>
+        </button>
+        <button type="button" className="strip-chip" onClick={() => setTab("design")}>
+          <span>PV (L0)</span>
+          <strong>{budgetSummary.solarGenerationW.toFixed(1)} W</strong>
+        </button>
+        <button
+          type="button"
+          className={`strip-chip margin-${powerMargin?.status ?? "info"}`}
+          onClick={() => setTab("budgets")}
+        >
+          <span>Power margin</span>
+          <strong>{powerMargin?.value ?? "—"}</strong>
+        </button>
+        <button
+          type="button"
+          className={`strip-chip status-${cdsWorst}`}
+          onClick={() => setTab("scorecard")}
+        >
+          <span>CDS</span>
+          <strong>{scorecardLine}</strong>
+        </button>
+      </div>
+
+      {error ? (
+        <div className="banner error-banner" role="alert">
+          <span className="error-text">{error}</span>
+        </div>
+      ) : null}
+
+      <div className="coach">
+        <button
+          type="button"
+          className="coach-toggle"
+          onClick={() => setGuideOpen((v) => !v)}
+        >
+          {guideOpen ? "Hide" : "Show"} guided path
+        </button>
+        {guideOpen ? (
+          <ol className="coach-list">
+            {nextSteps.map((step, i) => (
+              <li key={step.id}>
+                <div className="coach-card">
+                  <button
+                    type="button"
+                    className="coach-step"
+                    onClick={() => setTab(step.tab)}
+                  >
+                    <span className="coach-num">{i + 1}</span>
+                    <span>
+                      <strong>{step.title}</strong>
+                      <span className="citation">{step.detail}</span>
+                    </span>
+                  </button>
+                  {step.id === "power-margin" && suggestedPanelH != null ? (
+                    <button
+                      type="button"
+                      className="coach-apply"
+                      onClick={applySuggestedPanelHeight}
+                    >
+                      Apply panel H {suggestedPanelH} mm
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ol>
         ) : null}
       </div>
 
@@ -285,7 +428,15 @@ export function App() {
           disabled={busy}
           onClick={() => void importFromUrl(REFERENCE_STEP_URL, REFERENCE_STEP_NAME)}
         >
-          Load open 3U structure
+          Load open 3U
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy}
+          onClick={resetWorkbookKeepVisual}
+        >
+          Reset numbers
         </button>
         <button
           type="button"
@@ -296,7 +447,7 @@ export function App() {
             setDoc(createReference3UDocument());
           }}
         >
-          Reset Reference-3U
+          Show parametric frame
         </button>
         <button
           type="button"
@@ -307,14 +458,14 @@ export function App() {
           Import STEP / STL
         </button>
         <button type="button" className="secondary" onClick={saveProject}>
-          Save project
+          Save
         </button>
         <button
           type="button"
           className="secondary"
           onClick={() => projectRef.current?.click()}
         >
-          Open project
+          Open
         </button>
         <input
           ref={fileRef}
@@ -346,28 +497,30 @@ export function App() {
       </nav>
 
       {tab === "design" ? (
-        <div className="grid">
+        <div className="grid design-grid">
           <section className="panel viewport-panel">
-            <h2>3D viewport</h2>
-            <Viewport mesh={mesh} status={status} />
+            <div className="panel-head">
+              <h2>3D viewport</h2>
+              <span className="badge">
+                {mode === "imported" ? "Open structure" : "Parametric"}
+              </span>
+            </div>
+            <Viewport
+              mesh={mesh}
+              status={status}
+              fitNonce={fitNonce}
+              onFit={() => setFitNonce((n) => n + 1)}
+              envelopeMm={workbook.envelope}
+              showEnvelope
+            />
             <p className="hint">
-              Default geometry:{" "}
-              <a
-                href="https://github.com/elfenix7/OSCubeSatStruct"
-                target="_blank"
-                rel="noreferrer"
-              >
-                OSCubeSatStruct Mk5
-              </a>{" "}
-              (CERN-OHL-P). Budgets use the Reference-3U SFD beside it.
+              Dark wire box = CDS envelope from the numbers below. Imported Mk5
+              mesh stays fixed; change envelope to see the ghost resize.
             </p>
           </section>
 
           <section className="panel">
             <h2>Envelope &amp; solar (live)</h2>
-            <p className="hint">
-              Envelope drives CDS. Panel height drives L0 PV generation.
-            </p>
             <label className="field">
               <span>Width</span>
               <input
@@ -453,30 +606,35 @@ export function App() {
               <span>PV gen (L0)</span>
               <span>{budgetSummary.solarGenerationW.toFixed(2)} W</span>
             </div>
-            <div className="stat">
-              <span>Scorecard</span>
-              <span>{scorecardLine}</span>
-            </div>
+            <button
+              type="button"
+              className="secondary inline-action"
+              onClick={() => setTab("budgets")}
+            >
+              Edit board loads →
+            </button>
           </section>
 
-          <section className="panel">
-            <h2>Subsystems</h2>
-            {subsystems.map(([name, parts]) => (
-              <div className="subsystem" key={name}>
-                <div className="subsystem-title">{name}</div>
-                <ul>
-                  {parts.map((p) => (
-                    <li key={p.id}>
-                      <strong>{p.name}</strong>
-                      {p.massKg != null ? ` · ${p.massKg.toFixed(2)} kg` : ""}
-                      {p.wattsNominal != null
-                        ? ` · ${p.wattsNominal.toFixed(1)} W nom`
-                        : ""}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+          <section className="panel span-2">
+            <h2>Subsystems at a glance</h2>
+            <div className="subsystem-row">
+              {subsystems.map(([name, parts]) => (
+                <div className="subsystem" key={name}>
+                  <div className="subsystem-title">{name}</div>
+                  <ul>
+                    {parts.map((p) => (
+                      <li key={p.id}>
+                        <strong>{p.name}</strong>
+                        {p.massKg != null ? ` · ${p.massKg.toFixed(2)} kg` : ""}
+                        {p.wattsNominal != null
+                          ? ` · ${p.wattsNominal.toFixed(1)} W`
+                          : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
           </section>
         </div>
       ) : null}
@@ -522,7 +680,7 @@ export function App() {
           </section>
 
           <section className="panel">
-            <h2>Margins (traffic light)</h2>
+            <h2>Margins</h2>
             {budgetSummary.margins.map((m) => (
               <div className="check" key={m.id}>
                 <div className={`status margin-${m.status}`}>{m.status}</div>
@@ -537,7 +695,7 @@ export function App() {
           <section className="panel span-2">
             <h2>Edit board loads (kg / W nominal)</h2>
             <p className="hint">
-              Edits update mass, CG, power modes, and soft power CDS live.
+              Raise Panel H on Design if power margin stays red after cutting load.
             </p>
             <div className="edit-table">
               {editableBoards.map((p) => (
@@ -583,13 +741,18 @@ export function App() {
           <section className="panel span-2">
             <h2>CDS + soft constraints · {scorecardLine}</h2>
             {scorecard.map((check: CdsCheckResult) => (
-              <div className="check" key={check.id}>
+              <button
+                type="button"
+                className="check check-button"
+                key={check.id}
+                onClick={() => setTab(tabForCheck(check.id))}
+              >
                 <div className={`status ${check.status}`}>{check.status}</div>
                 <div>
                   <strong>{check.title}</strong> — {check.message}
+                  <div className="citation">{check.citation}</div>
                 </div>
-                <div className="citation">{check.citation}</div>
-              </div>
+              </button>
             ))}
             <h2 style={{ marginTop: "1rem" }}>Analysis assumptions</h2>
             <ul className="assumptions">
@@ -617,8 +780,22 @@ export function App() {
             <h2>VCRM-lite</h2>
             {systems.vcrm.map((row) => (
               <div className="vcrm" key={row.id}>
-                <div className="subsystem-title">
-                  {row.id} · {row.status}
+                <div className="vcrm-head">
+                  <div className="subsystem-title">{row.id}</div>
+                  <label className="vcrm-status">
+                    Status
+                    <select
+                      value={row.status}
+                      onChange={(e) =>
+                        setVcrmStatus(row.id, e.target.value as EvidenceStatus)
+                      }
+                    >
+                      <option value="planned">planned</option>
+                      <option value="in_progress">in progress</option>
+                      <option value="complete">complete</option>
+                      <option value="waived">waived</option>
+                    </select>
+                  </label>
                 </div>
                 <strong>{row.requirement}</strong>
                 <div className="citation">
@@ -640,10 +817,22 @@ export function App() {
                   <strong>{icd.title}</strong>
                   <p className="hint">Interface to: {icd.interfaceTo}</p>
                   <p>{icd.notes}</p>
-                  <ul className="assumptions">
-                    {icd.openItems.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
+                  <ul className="icd-checks">
+                    {icd.openItems.map((item) => {
+                      const done = (icd.resolvedOpenItems ?? []).includes(item);
+                      return (
+                        <li key={item}>
+                          <label className={done ? "done" : undefined}>
+                            <input
+                              type="checkbox"
+                              checked={done}
+                              onChange={() => toggleIcdItem(icd.id, item)}
+                            />
+                            {item}
+                          </label>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               ))}
@@ -657,8 +846,8 @@ export function App() {
           <section className="panel span-2">
             <h2>Phase A package</h2>
             <p className="hint">
-              Download artifacts for advisor review. CDR is Markdown for MVP;
-              PDF comes later.
+              Download for advisor review. Visual stays on Mk5 unless you switch
+              to parametric for STEP.
             </p>
             <div className="actions">
               <button type="button" onClick={downloadBom}>
@@ -667,30 +856,48 @@ export function App() {
               <button type="button" onClick={downloadCdr}>
                 Export CDR Markdown
               </button>
+              <button type="button" onClick={downloadCdrHtml}>
+                Export CDR HTML (print/PDF)
+              </button>
               <button type="button" className="secondary" onClick={saveProject}>
                 Save project JSON
               </button>
               <button
                 type="button"
                 className="secondary"
-                disabled={busy || mode !== "parametric"}
+                disabled={busy}
                 onClick={() => void downloadStep()}
               >
                 Export parametric STEP
               </button>
             </div>
-            <p className="hint">
-              Tip: keep the open Mk5 structure for visuals; use{" "}
-              <strong>Reset Reference-3U</strong> then export STEP when you need
-              a parametric B-rep.
-            </p>
+            {mode === "imported" ? (
+              <p className="hint">
+                Parametric STEP needs{" "}
+                <button
+                  type="button"
+                  className="linkish"
+                  onClick={() => setMode("parametric")}
+                >
+                  Show parametric frame
+                </button>{" "}
+                first.
+              </p>
+            ) : null}
           </section>
         </div>
       ) : null}
 
       <footer>
-        University Phase A path: template → budgets → scorecard → VCRM/ICD →
-        export. Apache-2.0 · see EXPORT_CONTROL.md
+        Viewing{" "}
+        {mode === "imported" ? (
+          <code>{importName}</code>
+        ) : (
+          <>
+            parametric · <code>{doc.name}</code>
+          </>
+        )}
+        . Apache-2.0 · EXPORT_CONTROL.md
       </footer>
     </main>
   );

@@ -6,7 +6,7 @@ Open-source **CubeSat Phase A systems workbook**: parametric 3D geometry, mass/p
 
 ## Status
 
-**MVP-3/5 in progress:** Defaults to open **OSCubeSatStruct Mk5** 3U STEP, with live PV/mass/power budgets, CDS scorecard (envelope/mass/CG/keep-out/soft power), VCRM-lite + ICD stubs, BOM CSV + CDR Markdown export, project save/load.
+**MVP-3/6 in progress:** Open **OSCubeSatStruct Mk5** visual + live budgets/CDS, guided Phase A coach, envelope ghost overlay, editable VCRM/ICD, BOM + CDR (Markdown/HTML), project save/load.
 
 Repository: [kellybyron2222-dev/3D-Space-Tech-CAD](https://github.com/kellybyron2222-dev/3D-Space-Tech-CAD)
 

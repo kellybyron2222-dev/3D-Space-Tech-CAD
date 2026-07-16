@@ -38,7 +38,13 @@ function OrbitControls() {
   return null;
 }
 
-function FitCamera({ mesh }: { mesh: TessellationResult }) {
+function FitCamera({
+  mesh,
+  fitNonce,
+}: {
+  mesh: TessellationResult;
+  fitNonce: number;
+}) {
   const { camera, invalidate } = useThree();
 
   useEffect(() => {
@@ -64,7 +70,7 @@ function FitCamera({ mesh }: { mesh: TessellationResult }) {
     camera.lookAt(center);
     camera.updateProjectionMatrix();
     invalidate();
-  }, [mesh, camera, invalidate]);
+  }, [mesh, fitNonce, camera, invalidate]);
 
   return null;
 }
@@ -78,12 +84,63 @@ function Grid() {
   return <primitive object={helper} />;
 }
 
+/** Wire CDS envelope so workbook numbers stay visually coupled to the model. */
+function EnvelopeGhost({
+  widthMm,
+  depthMm,
+  heightMm,
+}: {
+  widthMm: number;
+  depthMm: number;
+  heightMm: number;
+}) {
+  const geom = useMemo(
+    () => new THREE.BoxGeometry(widthMm, depthMm, heightMm),
+    [widthMm, depthMm, heightMm],
+  );
+  const edges = useMemo(() => new THREE.EdgesGeometry(geom), [geom]);
+  const mat = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: "#0b3d5c",
+        transparent: true,
+        opacity: 0.85,
+      }),
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      geom.dispose();
+      edges.dispose();
+      mat.dispose();
+    },
+    [geom, edges, mat],
+  );
+
+  return (
+    <lineSegments
+      geometry={edges}
+      material={mat}
+      position={[0, 0, heightMm / 2]}
+    />
+  );
+}
+
 export function Viewport({
   mesh,
   status,
+  fitNonce = 0,
+  onFit,
+  envelopeMm,
+  showEnvelope = true,
 }: {
   mesh: TessellationResult | null;
   status: string;
+  fitNonce?: number;
+  onFit?: () => void;
+  envelopeMm?: { w: number; d: number; h: number };
+  showEnvelope?: boolean;
 }) {
   const dpr = Math.min(
     typeof window !== "undefined" ? window.devicePixelRatio : 1,
@@ -97,7 +154,15 @@ export function Viewport({
     <div className="viewport-canvas">
       <div className="viewport-hud">
         {mesh ? `${triCount.toLocaleString()} triangles · drag to orbit` : status}
+        {showEnvelope && envelopeMm
+          ? ` · envelope ${envelopeMm.w}×${envelopeMm.d}×${envelopeMm.h} mm`
+          : ""}
       </div>
+      {mesh && onFit ? (
+        <button type="button" className="viewport-fit" onClick={onFit}>
+          Fit view
+        </button>
+      ) : null}
       {!mesh ? <div className="viewport-overlay">{status}</div> : null}
       <Canvas
         frameloop="always"
@@ -115,8 +180,15 @@ export function Viewport({
         {mesh ? (
           <>
             <ReplicadMesh faces={mesh.faces} edges={mesh.edges} />
-            <FitCamera mesh={mesh} />
+            <FitCamera mesh={mesh} fitNonce={fitNonce} />
           </>
+        ) : null}
+        {showEnvelope && envelopeMm ? (
+          <EnvelopeGhost
+            widthMm={envelopeMm.w}
+            depthMm={envelopeMm.d}
+            heightMm={envelopeMm.h}
+          />
         ) : null}
         <OrbitControls />
       </Canvas>
