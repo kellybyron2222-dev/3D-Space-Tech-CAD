@@ -205,12 +205,16 @@ export function createEmptyFeatureDocument(name = "Part Studio"): FeatureDocumen
   };
 }
 
-export function createBracketDemo(): FeatureDocument {
+export function createBracketDemo(options?: { includeDepth?: boolean }): FeatureDocument {
   return {
     version: 1,
     name: "Bracket-Demo",
     rollbackIndex: null,
-    parameters: { wall: 4, holeDia: 6 },
+    parameters: {
+      wall: 4,
+      holeDia: 6,
+      ...(options?.includeDepth ? { depth: 15 } : {}),
+    },
     features: [
       {
         id: "f-base",
@@ -578,13 +582,21 @@ export function parseAssemblyDocument(raw: string): AssemblyDocument {
  * Apply named parameters onto known feature bindings.
  * Bracket-Demo: wall → base height, holeDia → hole diameter.
  * Reference-3U: u → chassis/cavity XY, height → chassis Z.
+ * depth / extrude → all extrude depthMm; cutDepth → all cut depthMm.
  */
 export function applyParameters(doc: FeatureDocument): FeatureDocument {
   const p = doc.parameters ?? {};
+  const extrudeDepthMm = p.depth ?? p.extrude;
   return {
     ...doc,
     features: doc.features.map((f) => {
       let next = f;
+      if (extrudeDepthMm != null && next.kind === "extrude") {
+        next = { ...next, depthMm: extrudeDepthMm };
+      }
+      if (p.cutDepth != null && next.kind === "cut") {
+        next = { ...next, depthMm: p.cutDepth };
+      }
       if (p.holeDia != null && next.kind === "hole") {
         next = { ...next, diameterMm: p.holeDia };
       }

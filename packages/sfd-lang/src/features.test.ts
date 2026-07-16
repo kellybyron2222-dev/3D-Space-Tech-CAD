@@ -76,6 +76,70 @@ describe("feature document", () => {
     assert.equal(chassis.heightMm, 350);
   });
 
+  it("applyParameters drives extrude depth and cut cutDepth", () => {
+    const base = createEmptyFeatureDocument("Depth test");
+    base.features = [
+      {
+        id: "f-extrude-a",
+        name: "Boss A",
+        kind: "extrude",
+        plane: "front",
+        profile: "rect",
+        widthMm: 20,
+        heightMm: 10,
+        depthMm: 5,
+      },
+      {
+        id: "f-extrude-b",
+        name: "Boss B",
+        kind: "extrude",
+        plane: "top",
+        profile: "circle",
+        widthMm: 12,
+        heightMm: 12,
+        depthMm: 8,
+      },
+      {
+        id: "f-cut-a",
+        name: "Pocket",
+        kind: "cut",
+        plane: "front",
+        profile: "rect",
+        widthMm: 10,
+        heightMm: 6,
+        depthMm: 3,
+      },
+    ];
+
+    const byDepth = applyParameters({ ...base, parameters: { depth: 25 } });
+    for (const id of ["f-extrude-a", "f-extrude-b"]) {
+      const extrude = byDepth.features.find((f) => f.id === id);
+      assert.ok(extrude && extrude.kind === "extrude");
+      assert.equal(extrude.depthMm, 25);
+    }
+    const cutUnchanged = byDepth.features.find((f) => f.id === "f-cut-a");
+    assert.ok(cutUnchanged && cutUnchanged.kind === "cut");
+    assert.equal(cutUnchanged.depthMm, 3);
+
+    const byExtrude = applyParameters({ ...base, parameters: { extrude: 18 } });
+    const extrudeB = byExtrude.features.find((f) => f.id === "f-extrude-b");
+    assert.ok(extrudeB && extrudeB.kind === "extrude");
+    assert.equal(extrudeB.depthMm, 18);
+
+    const byCutDepth = applyParameters({ ...base, parameters: { cutDepth: 12 } });
+    const cut = byCutDepth.features.find((f) => f.id === "f-cut-a");
+    assert.ok(cut && cut.kind === "cut");
+    assert.equal(cut.depthMm, 12);
+    const extrudeStill = byCutDepth.features.find((f) => f.id === "f-extrude-a");
+    assert.ok(extrudeStill && extrudeStill.kind === "extrude");
+    assert.equal(extrudeStill.depthMm, 5);
+  });
+
+  it("createBracketDemo omits depth parameter by default", () => {
+    assert.equal(createBracketDemo().parameters?.depth, undefined);
+    assert.equal(createBracketDemo({ includeDepth: true }).parameters?.depth, 15);
+  });
+
   it("setParameter stores key and applies bindings", () => {
     const base = createBracketDemo();
     const doc = setParameter(base, "wall", 7);

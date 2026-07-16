@@ -16,12 +16,13 @@ export function AnalysisPanel() {
 
   return (
     <div className="analysis-panel">
+      <div className="ux-banner" role="status">
+        Analysis is an overlay — geometry authority is Part Studio.
+      </div>
+
       <header className="analysis-head">
         <h2>Analysis overlay (L0)</h2>
-        <p>
-          Educational mass / power / CDS checks. Geometry in Part Studio is the
-          design authority — these numbers are soft constraints.
-        </p>
+        <p>Educational mass / power / CDS checks against current Part Studio geometry.</p>
       </header>
 
       <div className="analysis-grid">
