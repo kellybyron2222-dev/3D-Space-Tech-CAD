@@ -62,8 +62,14 @@ Treated as wrong product shape. Analysis lives under **Analysis** tab.
 **Sim:** “Coach makes the SME exit test obvious. Drawing still bbox — good enough for Phase A demo.”
 
 ### Still open (next sessions)
-- Click-to-place sketch tools on plane
 - True OCCT edge-filtered fillet
 - True silhouette drawing projection
 - Full geometric mate solver
 - AI feature patches
+
+### Loop E — Click-place + kernel fillet hints
+- Viewport click/drag place for rect/circle/line when sketch selected
+- Driving dim W/H/Dia + H/V toggles in SketchEditor
+- Fillet uses edgeIndices as EdgeFinder plane/direction hints with global fallback
+
+**Sim feedback:** “Click-place on the plane finally feels like sketching; fillet hints are honest — still global fallback but less random.”

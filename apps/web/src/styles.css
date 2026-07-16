@@ -725,3 +725,41 @@ button.tool.active {
   flex-shrink: 0;
   align-self: flex-start;
 }
+
+.sketch-place-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+  padding: 0.35rem 0.4rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.sketch-place-tools button.tool {
+  min-width: auto;
+  font-size: 0.72rem;
+  padding: 0.22rem 0.38rem;
+}
+
+.sketch-place-tools .hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.sketch-driving-dims {
+  margin-bottom: 0.45rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.sketch-driving-dims .props-fields {
+  gap: 0.3rem;
+}
+
+.sketch-driving-dims .field {
+  grid-template-columns: 1.6rem 1fr;
+  font-size: 0.78rem;
+}

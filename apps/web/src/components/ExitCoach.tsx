@@ -67,8 +67,14 @@ function buildChecklist(
   ];
 }
 
+function isChecklistItem(
+  item: ChecklistItem,
+): item is Extract<ChecklistItem, { done: boolean }> {
+  return "done" in item;
+}
+
 function completedCount(items: ChecklistItem[]): number {
-  return items.filter((item) => "done" in item && item.done).length;
+  return items.filter((item) => isChecklistItem(item) && item.done).length;
 }
 
 export function ExitCoach({
@@ -90,8 +96,16 @@ export function ExitCoach({
     () => buildChecklist(doc, assemblyDone, drawingDone),
     [doc, assemblyDone, drawingDone],
   );
-  const done = completedCount(items);
-  const total = items.length;
+  const checklistItems = useMemo(
+    () => items.filter(isChecklistItem),
+    [items],
+  );
+  const tipItems = useMemo(
+    () => items.filter((item) => "tip" in item),
+    [items],
+  );
+  const done = completedCount(checklistItems);
+  const total = checklistItems.length;
 
   if (dismissed) return null;
 
@@ -123,59 +137,57 @@ export function ExitCoach({
             Exit test {done}/{total}
           </strong>
           <span className="exit-coach-sub">
-            Wall + hole + fillet → assembly → drawing → STEP
+            {total} checklist steps + STEP export tip
           </span>
         </div>
         <ol className="exit-coach-list">
-          {items.map((item) => (
+          {checklistItems.map((item) => (
             <li
               key={item.id}
               className={
-                "tip" in item
-                  ? "exit-coach-item exit-coach-item--tip"
-                  : item.done
-                    ? "exit-coach-item exit-coach-item--done"
-                    : "exit-coach-item"
+                item.done
+                  ? "exit-coach-item exit-coach-item--done"
+                  : "exit-coach-item"
               }
             >
-              {"tip" in item ? (
-                <>
-                  <span className="exit-coach-marker" aria-hidden>
-                    ·
-                  </span>
-                  <span className="exit-coach-label">{item.label}</span>
-                  <span className="selection-chip">{item.tip}</span>
-                </>
-              ) : (
-                <>
-                  <span
-                    className="exit-coach-marker"
-                    aria-hidden
-                    title={item.done ? "Done" : "Pending"}
-                  >
-                    {item.done ? "✓" : "○"}
-                  </span>
-                  <span className="exit-coach-label">{item.label}</span>
-                  {item.action === "assembly" && !item.done ? (
-                    <button
-                      type="button"
-                      className="secondary exit-coach-action"
-                      onClick={handleAssembly}
-                    >
-                      Open Assembly
-                    </button>
-                  ) : null}
-                  {item.action === "drawing" && !item.done ? (
-                    <button
-                      type="button"
-                      className="secondary exit-coach-action"
-                      onClick={handleDrawing}
-                    >
-                      Open Drawing
-                    </button>
-                  ) : null}
-                </>
-              )}
+              <span
+                className="exit-coach-marker"
+                aria-hidden
+                title={item.done ? "Done" : "Pending"}
+              >
+                {item.done ? "✓" : "○"}
+              </span>
+              <span className="exit-coach-label">{item.label}</span>
+              {item.action === "assembly" && !item.done ? (
+                <button
+                  type="button"
+                  className="secondary exit-coach-action"
+                  onClick={handleAssembly}
+                >
+                  Open Assembly
+                </button>
+              ) : null}
+              {item.action === "drawing" && !item.done ? (
+                <button
+                  type="button"
+                  className="secondary exit-coach-action"
+                  onClick={handleDrawing}
+                >
+                  Open Drawing
+                </button>
+              ) : null}
+            </li>
+          ))}
+          {tipItems.map((item) => (
+            <li
+              key={item.id}
+              className="exit-coach-item exit-coach-item--tip"
+            >
+              <span className="exit-coach-marker" aria-hidden>
+                ·
+              </span>
+              <span className="exit-coach-label">{item.label}</span>
+              <span className="selection-chip">{item.tip}</span>
             </li>
           ))}
         </ol>

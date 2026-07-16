@@ -4,10 +4,12 @@ import {
   applyParameters,
   createBracketDemo,
   createEmptyFeatureDocument,
+  createCircleSketchEntity,
   createRectSketchEntity,
   createReference3UFeatures,
   ensureSketchEntities,
   newFeatureId,
+  newSketchEntityId,
   parseFeatureDocument,
   serializeFeatureDocument,
   solveSketch,
@@ -34,7 +36,11 @@ import { AssemblyPanel } from "./components/AssemblyPanel";
 import { DrawingPanel } from "./components/DrawingPanel";
 import { ExitCoach } from "./components/ExitCoach";
 import { SketchEditor } from "./components/SketchEditor";
-import { Viewport } from "./components/Viewport";
+import {
+  Viewport,
+  type SketchPlaceMode,
+  type SketchPlacePayload,
+} from "./components/Viewport";
 import { loadAutosavedDocument, useAutosave } from "./hooks/useAutosave";
 import { useHistory } from "./hooks/useHistory";
 
@@ -69,6 +75,8 @@ export function App() {
   const [faceIndex, setFaceIndex] = useState<number | null>(null);
   const [edgeIndex, setEdgeIndex] = useState<number | null>(null);
   const [edgeLengthMm, setEdgeLengthMm] = useState<number | null>(null);
+  const [sketchPlaceMode, setSketchPlaceMode] =
+    useState<SketchPlaceMode>(null);
   const [mesh, setMesh] = useState<TessellationResult | null>(null);
   const [mass, setMass] = useState<MassPropsResult | null>(null);
   const [importPreview, setImportPreview] = useState<TessellationResult | null>(
@@ -736,6 +744,54 @@ export function App() {
                   setEdgeLengthMm(null);
                 }}
                 sketchGhost={sketchGhost}
+                sketchPlaceMode={
+                  selectedFeature?.kind === "sketch" ? sketchPlaceMode : null
+                }
+                onSketchPlace={(payload: SketchPlacePayload) => {
+                  if (selectedFeature?.kind !== "sketch" || !selectedFeatureId)
+                    return;
+                  const sk = ensureSketchEntities(selectedFeature);
+                  const entities = [...(sk.entities ?? [])];
+                  if (payload.kind === "circle") {
+                    entities.push(
+                      createCircleSketchEntity(20, payload.u, payload.v),
+                    );
+                  } else if (payload.kind === "rect") {
+                    const u2 = payload.u2 ?? payload.u + 40;
+                    const v2 = payload.v2 ?? payload.v + 30;
+                    const x = Math.min(payload.u, u2);
+                    const y = Math.min(payload.v, v2);
+                    const widthMm = Math.max(1, Math.abs(u2 - payload.u));
+                    const heightMm = Math.max(1, Math.abs(v2 - payload.v));
+                    entities.push({
+                      id: newSketchEntityId("se"),
+                      kind: "rect",
+                      x,
+                      y,
+                      widthMm,
+                      heightMm,
+                    });
+                  } else {
+                    entities.push({
+                      id: newSketchEntityId("se"),
+                      kind: "line",
+                      x1: payload.u,
+                      y1: payload.v,
+                      x2: payload.u2 ?? payload.u + 30,
+                      y2: payload.v2 ?? payload.v,
+                    });
+                  }
+                  updateFeature(
+                    selectedFeatureId,
+                    solveSketch(
+                      syncSketchProfileFromEntities({
+                        ...sk,
+                        entities,
+                      }),
+                    ),
+                  );
+                  setUxNote(`Placed ${payload.kind} on sketch plane`);
+                }}
                 faceIndex={faceIndex}
                 onFaceIndex={setFaceIndex}
                 edgeIndex={edgeIndex}
@@ -858,6 +914,8 @@ export function App() {
                   onChange={(patch) =>
                     updateFeature(selectedFeature.id, patch)
                   }
+                  sketchPlaceMode={sketchPlaceMode}
+                  onSketchPlaceMode={setSketchPlaceMode}
                 />
               )}
             </aside>
@@ -882,9 +940,13 @@ export function App() {
 function FeatureProps({
   feature,
   onChange,
+  sketchPlaceMode = null,
+  onSketchPlaceMode,
 }: {
   feature: CadFeature;
   onChange: (patch: Partial<CadFeature>) => void;
+  sketchPlaceMode?: SketchPlaceMode;
+  onSketchPlaceMode?: (mode: SketchPlaceMode) => void;
 }) {
   return (
     <div className="props-fields">
@@ -969,17 +1031,46 @@ function FeatureProps({
             />
           ) : null}
           {feature.kind === "sketch" ? (
-            <SketchEditor
-              sketch={feature}
-              onChange={(patch) => {
-                const merged = { ...feature, ...patch } as SketchFeature;
-                onChange(
-                  solveSketch(
-                    syncSketchProfileFromEntities(ensureSketchEntities(merged)),
-                  ),
-                );
-              }}
-            />
+            <>
+              <div className="sketch-place-tools">
+                <span className="hint">Place on plane:</span>
+                {(
+                  [
+                    ["rect", "Rect"],
+                    ["circle", "Circle"],
+                    ["line", "Line"],
+                  ] as const
+                ).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={
+                      sketchPlaceMode === mode ? "tool active" : "tool"
+                    }
+                    onClick={() =>
+                      onSketchPlaceMode?.(
+                        sketchPlaceMode === mode ? null : mode,
+                      )
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <SketchEditor
+                sketch={feature}
+                onChange={(patch) => {
+                  const merged = { ...feature, ...patch } as SketchFeature;
+                  onChange(
+                    solveSketch(
+                      syncSketchProfileFromEntities(
+                        ensureSketchEntities(merged),
+                      ),
+                    ),
+                  );
+                }}
+              />
+            </>
           ) : null}
         </>
       ) : null}
