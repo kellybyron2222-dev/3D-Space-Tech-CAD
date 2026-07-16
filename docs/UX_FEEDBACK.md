@@ -111,3 +111,13 @@ Treated as wrong product shape. Analysis lives under **Analysis** tab.
 - Base height handle keeps `wall` named parameter in sync on Bracket-Demo
 
 **Sim feedback:** "Crosshair + hint makes tool mode obvious. Handle grow on drag feels tactile. Wall param tracking height handle closes the Bracket-Demo loop."
+
+### Loop I — Click-where placement + real picking
+- Hole/Cut tools place at the clicked world XY (0.5 mm snap); through-depth from `wall` / bbox
+- Face pick uses raycast triangle → face group (no more cycling faces on every click)
+- Shift+click picks nearest edge to the hit point (fillet/chamfer)
+- Esc stages: cancel tool → cancel sketch place → clear selection
+- Shortcuts: H/C/F/E; HUD shows live dims while dragging handles
+- Revolve handles enabled in viewport
+
+**Sim feedback:** "Click where I want the hole — finally. Face highlight matches what I clicked. Esc doesn’t wipe the whole selection when I only meant to drop the tool."

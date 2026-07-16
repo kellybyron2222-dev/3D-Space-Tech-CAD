@@ -7,9 +7,12 @@ import {
 } from "@spacetech/sfd-lang";
 import {
   cycleViewportEditableFeature,
+  faceGroupFromTriangleIndex,
   formatFeatureDimensionReadout,
   mapFaceIndexToFeature,
+  nearestEdgeIndexToPoint,
   resolveViewportBodySelect,
+  snapMm,
 } from "./selectionMapping.js";
 
 describe("selectionMapping", () => {
@@ -154,5 +157,29 @@ describe("selectionMapping", () => {
       }),
       null,
     );
+  });
+
+  it("maps triangle index to face group", () => {
+    const groups = [
+      { start: 0, count: 2 },
+      { start: 2, count: 4 },
+    ];
+    assert.equal(faceGroupFromTriangleIndex(0, groups), 0);
+    assert.equal(faceGroupFromTriangleIndex(3, groups), 1);
+    assert.equal(faceGroupFromTriangleIndex(9, groups), null);
+  });
+
+  it("finds nearest edge to a point", () => {
+    const lines = [
+      0, 0, 0, 10, 0, 0, // edge 0
+      0, 5, 0, 10, 5, 0, // edge 1
+    ];
+    assert.equal(nearestEdgeIndexToPoint({ x: 5, y: 0.2, z: 0 }, lines), 0);
+    assert.equal(nearestEdgeIndexToPoint({ x: 5, y: 4.8, z: 0 }, lines), 1);
+  });
+
+  it("snaps to 0.5 mm", () => {
+    assert.equal(snapMm(12.24), 12);
+    assert.equal(snapMm(12.3), 12.5);
   });
 });

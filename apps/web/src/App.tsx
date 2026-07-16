@@ -61,6 +61,7 @@ import { usePartStudioHistory } from "./hooks/useHistory";
 import {
   formatFeatureDimensionReadout,
   resolveViewportBodySelect,
+  snapMm,
 } from "./cad/selectionMapping";
 
 function isTypingTarget(t: EventTarget | null): boolean {
@@ -100,20 +101,15 @@ const ACTIVE_TOOL_HINTS: Record<
   Exclude<ActiveTool, null | "select">,
   string
 > = {
-  cut: "Cut tool: click a face or press Enter to place cut from current sketch",
-  hole: "Hole tool: click the solid or press Enter to place a hole",
-  fillet:
-    "Fillet tool: Shift+click an edge or click the solid, then press Enter",
-  chamfer:
-    "Chamfer tool: Shift+click an edge or click the solid, then press Enter",
+  cut: "Cut tool: click where to cut (or Enter from sketch) · Esc cancels",
+  hole: "Hole tool: click where to drill (or Enter) · Esc cancels",
+  fillet: "Fillet tool: Shift+click nearest edge (or Enter) · Esc cancels",
+  chamfer: "Chamfer tool: Shift+click nearest edge (or Enter) · Esc cancels",
   extrude:
-    "Extrude tool: click the solid or press Enter to extrude from current sketch",
-  revolve:
-    "Revolve tool: click the solid or press Enter to place a revolve",
-  mirror:
-    "Mirror tool: click body or Enter to mirror across right plane",
-  linearPattern:
-    "Pattern tool: click body or Enter to add linear pattern",
+    "Extrude tool: click solid or Enter to extrude current sketch · Esc cancels",
+  revolve: "Revolve tool: click solid or Enter to place · Esc cancels",
+  mirror: "Mirror tool: click body or Enter · Esc cancels",
+  linearPattern: "Pattern tool: click body or Enter · Esc cancels",
 };
 
 function isEditableFeature(f: CadFeature | null): f is CadFeature {
@@ -373,8 +369,14 @@ export function App() {
     } satisfies BoxFeature);
   }
 
-  function addCut() {
-    const sketch = sketchForNextOp();
+  function addCut(at?: { x: number; y: number; z: number }) {
+    const sketch = at ? undefined : sketchForNextOp();
+    const wall =
+      typeof doc.parameters?.wall === "number" ? doc.parameters.wall : null;
+    const throughDepth = Math.max(
+      80,
+      (wall ?? measureBox?.z ?? 20) + 40,
+    );
     const id = newFeatureId("cut");
     addFeature({
       id,
@@ -382,21 +384,24 @@ export function App() {
       kind: "cut",
       sketchId: sketch?.id,
       plane: sketch?.plane ?? "front",
-      profile: sketch?.profile ?? "rect",
-      widthMm: sketch?.widthMm ?? 20,
-      heightMm: sketch?.heightMm ?? 20,
-      depthMm: 80,
-      offsetUMm: sketch?.offsetUMm,
-      offsetVMm: sketch?.offsetVMm,
+      profile: sketch?.profile ?? (at ? "circle" : "rect"),
+      widthMm: sketch?.widthMm ?? (at ? 12 : 20),
+      heightMm: sketch?.heightMm ?? (at ? 12 : 20),
+      depthMm: throughDepth,
+      offsetUMm: at ? snapMm(at.x) : sketch?.offsetUMm,
+      offsetVMm: at ? snapMm(at.y) : sketch?.offsetVMm,
     } satisfies CutFeature);
   }
 
-  function addHole() {
+  function addHole(at?: { x: number; y: number; z: number }) {
     const id = newFeatureId("hole");
     let diameterMm = 6;
     let xMm = 15;
     let yMm = 10;
-    if (selectedFeature?.kind === "sketch") {
+    if (at) {
+      xMm = snapMm(at.x);
+      yMm = snapMm(at.y);
+    } else if (selectedFeature?.kind === "sketch") {
       const sk = ensureSketchEntities(selectedFeature);
       const circle = sk.entities?.find((e) => e.kind === "circle");
       if (circle?.kind === "circle") {
@@ -409,15 +414,18 @@ export function App() {
         yMm = sk.offsetVMm ?? 0;
       }
     }
+    const wall =
+      typeof doc.parameters?.wall === "number" ? doc.parameters.wall : null;
+    const depthMm = Math.max(20, (wall ?? measureBox?.z ?? 20) + 2);
     addFeature({
       id,
       name: `Hole ${doc.features.length + 1}`,
       kind: "hole",
       diameterMm,
-      depthMm: 20,
+      depthMm,
       xMm,
       yMm,
-      zMm: 0,
+      zMm: -1,
     } satisfies HoleFeature);
   }
 
@@ -463,13 +471,13 @@ export function App() {
     });
   }
 
-  function applyActiveTool() {
+  function applyActiveTool(hit?: { x: number; y: number; z: number }) {
     switch (activeTool) {
       case "cut":
-        addCut();
+        addCut(hit);
         break;
       case "hole":
-        addHole();
+        addHole(hit);
         break;
       case "fillet":
         addFillet();
@@ -493,6 +501,13 @@ export function App() {
         return;
     }
     setActiveTool(null);
+    if (hit && (activeTool === "hole" || activeTool === "cut")) {
+      setUxNote(
+        activeTool === "hole"
+          ? `Hole placed at (${snapMm(hit.x)}, ${snapMm(hit.y)}) — drag handles to tune`
+          : `Cut placed at (${snapMm(hit.x)}, ${snapMm(hit.y)}) — drag handles / Properties to tune`,
+      );
+    }
   }
 
   const isPlacementTool =
@@ -614,14 +629,22 @@ export function App() {
         return;
       }
       if (e.key === "Escape") {
-        setActiveTool(null);
+        if (activeTool) {
+          setActiveTool(null);
+          setUxNote("Tool cancelled");
+          return;
+        }
+        if (sketchPlaceMode) {
+          setSketchPlaceMode(null);
+          setUxNote("Sketch place cancelled");
+          return;
+        }
         setBodySelected(false);
         setMeasureMm(null);
         setMeasureBox(null);
         setFaceIndex(null);
         setEdgeIndex(null);
         setEdgeLengthMm(null);
-        setSketchPlaceMode(null);
         return;
       }
       if (inField) return;
@@ -638,13 +661,34 @@ export function App() {
         studio.setDoc((p) => ({ ...p, rollbackIndex: null }));
         return;
       }
-      if (e.key === "s" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        addSketch();
-      } else if (e.key === "e" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        addExtrudeFromSketch();
-      } else if (
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === "s") {
+          e.preventDefault();
+          addSketch();
+          return;
+        }
+        if (e.key === "e") {
+          e.preventDefault();
+          toggleActiveTool("extrude");
+          return;
+        }
+        if (e.key === "h") {
+          e.preventDefault();
+          toggleActiveTool("hole");
+          return;
+        }
+        if (e.key === "c") {
+          e.preventDefault();
+          toggleActiveTool("cut");
+          return;
+        }
+        if (e.key === "f") {
+          e.preventDefault();
+          toggleActiveTool("fillet");
+          return;
+        }
+      }
+      if (
         (e.key === "Delete" || e.key === "Backspace") &&
         selectedFeatureId
       ) {
@@ -654,7 +698,15 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [studio, tab, selectedFeatureId, doc, activeTool, isPlacementTool]);
+  }, [
+    studio,
+    tab,
+    selectedFeatureId,
+    doc,
+    activeTool,
+    isPlacementTool,
+    sketchPlaceMode,
+  ]);
 
   async function exportStep() {
     setBusy(true);
@@ -752,11 +804,15 @@ export function App() {
 
   function onViewportBodySelect(
     faceIndexNext: number | null,
-    opts?: { altKey?: boolean; edgeSelect?: boolean },
+    opts?: {
+      altKey?: boolean;
+      edgeSelect?: boolean;
+      point?: { x: number; y: number; z: number };
+    },
   ) {
     const placingFeature = isPlacementTool;
     if (placingFeature) {
-      applyActiveTool();
+      applyActiveTool(opts?.point);
     }
     const bodyWasSelected = bodySelected;
     setBodySelected(true);
@@ -778,7 +834,7 @@ export function App() {
         setUxNote(
           uxNote.startsWith("Drag handles active:")
             ? uxNote
-            : `${uxNote} Pick a toolbar tool (Cut, Hole, …) then click the solid to place.`,
+            : `${uxNote} Pick a toolbar tool (Cut, Hole, …) then click where to place.`,
         );
       }
     }
@@ -1160,11 +1216,10 @@ export function App() {
                 })}
               </ul>
               <p className="tree-hint">
-                Click the solid to select Base/Hole/Extrude — click again to cycle
-                features (Alt+click also cycles). Drag colored handles to edit.
-                Pick Cut / Hole / Fillet / Chamfer in the toolbar, then click the
-                solid (or Enter). Shift+click edges for fillet/chamfer. Double-click
-                = rollback · Ctrl+Z undo · Esc clears tool.
+                Click a face to select — click again to cycle Base/Hole/Extrude
+                (Alt+click cycles). Drag handles to edit. Tools: H hole · C cut ·
+                F fillet · E extrude — then click where to place. Shift+click
+                picks nearest edge. Esc cancels tool first, then selection.
               </p>
             </aside>
 
@@ -1181,6 +1236,7 @@ export function App() {
                     ? ACTIVE_TOOL_HINTS[activeTool]
                     : null
                 }
+                dimensionReadout={selectedFeatureDimensions}
                 onClearSelection={() => {
                   setBodySelected(false);
                   setMeasureMm(null);

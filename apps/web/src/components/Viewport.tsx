@@ -6,6 +6,10 @@ import type { TessellationResult } from "@spacetech/kernel-bridge";
 import type { CadFeature, PlaneId, ProfileKind } from "@spacetech/sfd-lang";
 import { ReplicadMesh, edgeCountFromLines } from "./ReplicadMesh";
 import { FeatureHandles, type FeatureDragPatch } from "./FeatureHandles";
+import {
+  faceGroupFromTriangleIndex,
+  nearestEdgeIndexToPoint,
+} from "../cad/selectionMapping";
 
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
 
@@ -459,17 +463,26 @@ function SelectableBody({
   edgeIndex: number | null;
   onSelectFace: (
     faceIndex: number | null,
-    opts?: { altKey?: boolean; edgeSelect?: boolean },
+    opts?: {
+      altKey?: boolean;
+      edgeSelect?: boolean;
+      point?: { x: number; y: number; z: number };
+    },
   ) => void;
   onSelectEdge: (
     edgeIndex: number | null,
-    opts?: { altKey?: boolean; edgeSelect?: boolean },
+    opts?: {
+      altKey?: boolean;
+      edgeSelect?: boolean;
+      point?: { x: number; y: number; z: number };
+    },
   ) => void;
   selectionEnabled?: boolean;
 }) {
   const down = useRef<{ x: number; y: number } | null>(null);
   const groups = mesh.faces.faceGroups ?? [];
-  const edgeCount = edgeCountFromLines(mesh.edges.lines);
+  void faceIndex;
+  void edgeIndex;
 
   return (
     <group
@@ -485,20 +498,21 @@ function SelectableBody({
         down.current = null;
         if (dx * dx + dy * dy < 16) {
           e.stopPropagation();
+          const point = {
+            x: e.point.x,
+            y: e.point.y,
+            z: e.point.z,
+          };
           if (e.shiftKey) {
-            if (edgeCount > 0) {
-              const next =
-                edgeIndex == null ? 0 : (edgeIndex + 1) % edgeCount;
-              onSelectEdge(next, { altKey: e.altKey, edgeSelect: true });
-            } else {
-              onSelectEdge(null, { altKey: e.altKey, edgeSelect: true });
-            }
-          } else if (groups.length > 0) {
-            const next =
-              faceIndex == null ? 0 : (faceIndex + 1) % groups.length;
-            onSelectFace(next, { altKey: e.altKey });
+            const nearest = nearestEdgeIndexToPoint(point, mesh.edges.lines);
+            onSelectEdge(nearest, {
+              altKey: e.altKey,
+              edgeSelect: true,
+              point,
+            });
           } else {
-            onSelectFace(null, { altKey: e.altKey });
+            const hitFace = faceGroupFromTriangleIndex(e.faceIndex, groups);
+            onSelectFace(hitFace, { altKey: e.altKey, point });
           }
         }
       }}
@@ -516,7 +530,11 @@ function SelectableBody({
 
 export type ViewportBodySelectHandler = (
   faceIndex: number | null,
-  opts?: { altKey?: boolean; edgeSelect?: boolean },
+  opts?: {
+    altKey?: boolean;
+    edgeSelect?: boolean;
+    point?: { x: number; y: number; z: number };
+  },
 ) => void;
 
 export function Viewport({
@@ -538,6 +556,7 @@ export function Viewport({
   onFeatureDragStart,
   onFeatureDragEnd,
   toolHint = null,
+  dimensionReadout = null,
 }: {
   mesh: TessellationResult | null;
   status: string;
@@ -552,12 +571,14 @@ export function Viewport({
   faceIndex?: number | null;
   edgeIndex?: number | null;
   onEdgeIndex?: (i: number | null) => void;
-  /** Selected box/hole/extrude — shows drag handles in the viewport */
+  /** Selected box/hole/extrude/revolve — shows drag handles in the viewport */
   editFeature?: CadFeature | null;
   onFeatureDrag?: (patch: FeatureDragPatch) => void;
   onFeatureDragStart?: () => void;
   onFeatureDragEnd?: () => void;
   toolHint?: string | null;
+  /** Live dims for selected editable feature */
+  dimensionReadout?: string | null;
 }) {
   const [handleDragging, setHandleDragging] = useState(false);
   const dpr = Math.min(
@@ -574,7 +595,8 @@ export function Viewport({
     Boolean(editFeature && onFeatureDrag) &&
     (editFeature?.kind === "box" ||
       editFeature?.kind === "hole" ||
-      editFeature?.kind === "extrude");
+      editFeature?.kind === "extrude" ||
+      editFeature?.kind === "revolve");
   const placeHint =
     sketchPlaceMode === "circle"
       ? "click to place circle"
@@ -589,15 +611,17 @@ export function Viewport({
       className={`viewport-canvas cad-viewport${toolHint ? " tool-cursor-crosshair" : ""}`}
     >
       <div
-        className={`viewport-hud${placingSketch || toolHint ? " viewport-hud--placing" : ""}`}
+        className={`viewport-hud${placingSketch || toolHint || handleDragging ? " viewport-hud--placing" : ""}`}
       >
         {placingSketch && placeHint
           ? `[SKETCH] ${placeHint}`
           : toolHint
             ? `[TOOL] ${toolHint}`
-            : mesh
-              ? `${triCount.toLocaleString()} tris · ${faceCount} faces · ${edgeCount} edges · click face · Shift+click edge${edgeIndex != null ? ` · edge #${edgeIndex}` : ""}${canEditHandles ? " · drag handles to edit" : ""}`
-              : status}
+            : handleDragging && dimensionReadout
+              ? `[EDIT] ${dimensionReadout}`
+              : mesh
+                ? `${triCount.toLocaleString()} tris · ${faceCount} faces · ${edgeCount} edges · click face · Shift+click nearest edge${edgeIndex != null ? ` · edge #${edgeIndex}` : ""}${dimensionReadout ? ` · ${dimensionReadout}` : ""}${canEditHandles ? " · drag handles" : ""}`
+                : status}
       </div>
       {mesh && onFit ? (
         <button type="button" className="viewport-fit" onClick={onFit}>

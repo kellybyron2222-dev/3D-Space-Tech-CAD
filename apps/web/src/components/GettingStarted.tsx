@@ -47,17 +47,18 @@ export function GettingStarted({
         </p>
         <ol className="getting-started-steps">
           <li>
-            Choose a tool (<strong>Cut</strong> / <strong>Hole</strong> /{" "}
-            <strong>Fillet</strong> / <strong>Mirror</strong> /{" "}
-            <strong>Pattern</strong>) in the toolbar — it stays active; the
-            viewport shows a crosshair while placing.
+            Pick a tool in the toolbar (or keys <strong>H</strong> hole /{" "}
+            <strong>C</strong> cut / <strong>F</strong> fillet) — crosshair
+            means place mode is on.
           </li>
           <li>
-            Click the solid (or <strong>Enter</strong>) to place that feature.
+            Click <em>where</em> you want the hole or cut (or{" "}
+            <strong>Enter</strong>). <strong>Shift+click</strong> nearest edge
+            for fillet/chamfer. <strong>Esc</strong> cancels the tool.
           </li>
           <li>
-            Click the solid to select Base / Hole / Extrude; drag colored
-            handles to reshape.
+            Click a face to select Base / Hole / Extrude; drag colored handles
+            to reshape (dims show in the viewport HUD).
           </li>
           <li>
             Change <strong>Parameters</strong> or <strong>Properties</strong> for

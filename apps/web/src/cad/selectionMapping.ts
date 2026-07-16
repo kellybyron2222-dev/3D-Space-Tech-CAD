@@ -175,5 +175,76 @@ export function formatFeatureDimensionReadout(
   if (feature.kind === "extrude") {
     return `depth ${feature.depthMm.toFixed(1)}`;
   }
+  if (feature.kind === "revolve") {
+    const angle = feature.angleDeg ?? 360;
+    return `Ø${feature.widthMm.toFixed(1)} · ${angle.toFixed(0)}°`;
+  }
+  if (feature.kind === "cut") {
+    const u = feature.offsetUMm ?? 0;
+    const v = feature.offsetVMm ?? 0;
+    return `cut ${feature.widthMm.toFixed(1)}×${feature.heightMm.toFixed(1)} @ (${u.toFixed(1)}, ${v.toFixed(1)})`;
+  }
   return null;
+}
+
+/** Map a tessellated triangle index to a face-group index (replicad faceGroups). */
+export function faceGroupFromTriangleIndex(
+  triangleIndex: number | undefined | null,
+  faceGroups: ReadonlyArray<{ start?: number; count?: number }> | undefined,
+): number | null {
+  if (triangleIndex == null || triangleIndex < 0 || !faceGroups?.length) {
+    return null;
+  }
+  for (let i = 0; i < faceGroups.length; i++) {
+    const g = faceGroups[i]!;
+    const start = g.start ?? 0;
+    const count = g.count ?? 0;
+    if (triangleIndex >= start && triangleIndex < start + count) return i;
+  }
+  return null;
+}
+
+/** Nearest mesh edge index to a world point (lines = [x1,y1,z1,x2,y2,z2,…]). */
+export function nearestEdgeIndexToPoint(
+  point: { x: number; y: number; z: number },
+  lines: ArrayLike<number> | undefined,
+): number | null {
+  if (!lines || lines.length < 6) return null;
+  let best = -1;
+  let bestD = Infinity;
+  const px = point.x;
+  const py = point.y;
+  const pz = point.z;
+  for (let i = 0, ei = 0; i + 5 < lines.length; i += 6, ei++) {
+    const ax = lines[i]!;
+    const ay = lines[i + 1]!;
+    const az = lines[i + 2]!;
+    const bx = lines[i + 3]!;
+    const by = lines[i + 4]!;
+    const bz = lines[i + 5]!;
+    const abx = bx - ax;
+    const aby = by - ay;
+    const abz = bz - az;
+    const apx = px - ax;
+    const apy = py - ay;
+    const apz = pz - az;
+    const ab2 = abx * abx + aby * aby + abz * abz;
+    const t =
+      ab2 > 1e-12
+        ? Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / ab2))
+        : 0;
+    const dx = ax + abx * t - px;
+    const dy = ay + aby * t - py;
+    const dz = az + abz * t - pz;
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d < bestD) {
+      bestD = d;
+      best = ei;
+    }
+  }
+  return best >= 0 ? best : null;
+}
+
+export function snapMm(v: number): number {
+  return Math.round(v * 2) / 2;
 }
