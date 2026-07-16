@@ -52,7 +52,8 @@ export function GettingStarted({
             means place mode is on.
           </li>
           <li>
-            Click <em>where</em> you want the hole or cut (or{" "}
+            For hole/cut: click to place at default size, or{" "}
+            <strong>drag</strong> on the solid to set Ø before release (or{" "}
             <strong>Enter</strong>). <strong>Shift+click</strong> nearest edge
             for fillet/chamfer. <strong>Esc</strong> cancels the tool.
           </li>
