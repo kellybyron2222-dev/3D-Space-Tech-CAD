@@ -6,7 +6,7 @@
 
 ## Status honesty
 
-**CAD preview advancing toward table-stakes.** Part Studio: multi-entity sketch place+solve → extrude/cut/hole/revolve/fillet/chamfer/mirror/pattern; face/edge select; named params; autosave/share; assemblies lite; associative drawing SVG; STEP/STL; material mass display; exit coach. CI smoke on core path. Still missing: full constraint sketcher, true B-rep edge fillet map, production silhouette drawings, true mates.
+**CAD preview advancing toward table-stakes.** Part Studio: multi-entity sketch place+solve → extrude/cut/hole/revolve/fillet/chamfer/mirror/pattern; face/edge select; toolbar tool modes + viewport drag handles on box/hole/extrude; named params; autosave/share; assemblies lite; associative drawing SVG; STEP/STL; material mass display; exit coach. CI smoke on core path. Still missing: full constraint sketcher, true B-rep edge fillet map, production silhouette drawings, true mates.
 
 Treat as **preview**, not a peer to SolidWorks / Onshape / FreeCAD, until the Phase A exit path is solid in CI.
 

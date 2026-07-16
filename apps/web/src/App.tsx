@@ -59,7 +59,7 @@ import {
 } from "./hooks/useAutosave";
 import { usePartStudioHistory } from "./hooks/useHistory";
 import {
-  isViewportEditableKind,
+  formatFeatureDimensionReadout,
   resolveViewportBodySelect,
 } from "./cad/selectionMapping";
 
@@ -91,6 +91,7 @@ type ActiveTool =
   | "fillet"
   | "chamfer"
   | "extrude"
+  | "revolve"
   | "select";
 
 const ACTIVE_TOOL_HINTS: Record<
@@ -105,6 +106,8 @@ const ACTIVE_TOOL_HINTS: Record<
     "Chamfer tool: Shift+click an edge or click the solid, then press Enter",
   extrude:
     "Extrude tool: click the solid or press Enter to extrude from current sketch",
+  revolve:
+    "Revolve tool: click the solid or press Enter to place a revolve",
 };
 
 function isEditableFeature(f: CadFeature | null): f is CadFeature {
@@ -148,6 +151,7 @@ export function App() {
   const [fitNonce, setFitNonce] = useState(0);
   const [uxNote, setUxNote] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ActiveTool>(null);
+  const [draggingHandles, setDraggingHandles] = useState(false);
   const rebuildGen = useRef(0);
   const displayMesh = importPreview ?? mesh;
   const displayMaterial = getMaterial(materialId);
@@ -178,6 +182,12 @@ export function App() {
   const selectedFeature = useMemo(
     () => doc.features.find((f) => f.id === selectedFeatureId) ?? null,
     [doc.features, selectedFeatureId],
+  );
+
+  const selectedFeatureDimensions = useMemo(
+    () =>
+      selectedFeature ? formatFeatureDimensionReadout(selectedFeature) : null,
+    [selectedFeature],
   );
 
   useEffect(() => {
@@ -247,8 +257,9 @@ export function App() {
   }
 
   useEffect(() => {
+    if (draggingHandles) return;
     void rebuild(doc);
-  }, [doc, rebuild]);
+  }, [doc, rebuild, draggingHandles]);
 
   function updateFeature(id: string, patch: Partial<CadFeature>) {
     dismissImportPreview();
@@ -449,6 +460,9 @@ export function App() {
       case "extrude":
         addExtrudeFromSketch();
         break;
+      case "revolve":
+        addRevolve();
+        break;
       default:
         return;
     }
@@ -460,7 +474,8 @@ export function App() {
     activeTool === "hole" ||
     activeTool === "fillet" ||
     activeTool === "chamfer" ||
-    activeTool === "extrude";
+    activeTool === "extrude" ||
+    activeTool === "revolve";
 
   function addRevolve() {
     const id = newFeatureId("rev");
@@ -979,7 +994,12 @@ export function App() {
             >
               Hole
             </button>
-            <button type="button" className="tool" disabled={busy} onClick={addRevolve}>
+            <button
+              type="button"
+              className={activeTool === "revolve" ? "tool active" : "tool"}
+              disabled={busy}
+              onClick={() => toggleActiveTool("revolve")}
+            >
               Revolve
             </button>
             <button
@@ -1134,11 +1154,13 @@ export function App() {
                 editFeature={
                   selectedFeature?.kind === "box" ||
                   selectedFeature?.kind === "hole" ||
-                  selectedFeature?.kind === "extrude"
+                  selectedFeature?.kind === "extrude" ||
+                  selectedFeature?.kind === "revolve"
                     ? selectedFeature
                     : null
                 }
                 onFeatureDragStart={() => {
+                  setDraggingHandles(true);
                   // Snapshot before drag so Ctrl+Z restores pre-drag pose
                   studio.setDoc((prev) => structuredClone(prev));
                 }}
@@ -1152,6 +1174,9 @@ export function App() {
                         : f,
                     ),
                   }));
+                }}
+                onFeatureDragEnd={() => {
+                  setDraggingHandles(false);
                 }}
                 sketchGhost={sketchGhost}
                 sketchPlaceMode={
@@ -1238,12 +1263,8 @@ export function App() {
               {faceIndex != null ? (
                 <div className="selection-chip">Face group #{faceIndex}</div>
               ) : null}
-              {bodySelected &&
-              selectedFeature &&
-              isViewportEditableKind(selectedFeature.kind) ? (
-                <div className="selection-chip">
-                  Drag handles active: {selectedFeature.name}
-                </div>
+              {selectedFeatureDimensions ? (
+                <div className="selection-chip">{selectedFeatureDimensions}</div>
               ) : null}
               {edgeIndex != null ? (
                 <div className="selection-chip">

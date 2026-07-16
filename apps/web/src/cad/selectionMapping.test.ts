@@ -7,6 +7,7 @@ import {
 } from "@spacetech/sfd-lang";
 import {
   cycleViewportEditableFeature,
+  formatFeatureDimensionReadout,
   mapFaceIndexToFeature,
   resolveViewportBodySelect,
 } from "./selectionMapping.js";
@@ -102,5 +103,56 @@ describe("selectionMapping", () => {
       altKey: true,
     });
     assert.equal(result.featureId, "e");
+  });
+
+  it("formats dimension readout for box, hole, and extrude", () => {
+    assert.equal(
+      formatFeatureDimensionReadout({
+        id: "b",
+        name: "Block",
+        kind: "box",
+        widthMm: 80,
+        depthMm: 50,
+        heightMm: 7,
+      }),
+      "W 80.0 · D 50.0 · H 7.0",
+    );
+    assert.equal(
+      formatFeatureDimensionReadout({
+        id: "h",
+        name: "Hole",
+        kind: "hole",
+        diameterMm: 6,
+        depthMm: 10,
+        xMm: 12.5,
+        yMm: -3.2,
+      }),
+      "Ø6.0 @ (12.5, -3.2)",
+    );
+    assert.equal(
+      formatFeatureDimensionReadout({
+        id: "e",
+        name: "Boss",
+        kind: "extrude",
+        plane: "top",
+        profile: "rect",
+        widthMm: 5,
+        heightMm: 5,
+        depthMm: 12,
+      }),
+      "depth 12.0",
+    );
+    assert.equal(
+      formatFeatureDimensionReadout({
+        id: "s",
+        name: "Sketch",
+        kind: "sketch",
+        plane: "front",
+        profile: "rect",
+        widthMm: 10,
+        heightMm: 10,
+      }),
+      null,
+    );
   });
 });

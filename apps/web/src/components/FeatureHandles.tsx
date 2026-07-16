@@ -12,7 +12,8 @@ type HandleKind =
   | "height"
   | "holeXY"
   | "holeDia"
-  | "extrudeDepth";
+  | "extrudeDepth"
+  | "revolveRadius";
 
 const HANDLE_RADIUS = 2.8;
 
@@ -77,6 +78,15 @@ export function FeatureHandles({
   if (feature.kind === "extrude") {
     return (
       <ExtrudeHandles
+        feature={feature}
+        onPatch={onPatch}
+        onDragState={onDragState}
+      />
+    );
+  }
+  if (feature.kind === "revolve") {
+    return (
+      <RevolveHandles
         feature={feature}
         onPatch={onPatch}
         onDragState={onDragState}
@@ -238,6 +248,45 @@ function ExtrudeHandles({
         }}
       />
     </group>
+  );
+}
+
+function RevolveHandles({
+  feature,
+  onPatch,
+  onDragState,
+}: {
+  feature: Extract<CadFeature, { kind: "revolve" }>;
+  onPatch: (patch: FeatureDragPatch) => void;
+  onDragState?: (dragging: boolean) => void;
+}) {
+  const u = feature.offsetUMm ?? 20;
+  const v = feature.offsetVMm ?? 0;
+  const dia = feature.widthMm;
+  const plane = feature.plane;
+  const origin = featureOriginOnPlane(plane, u, v);
+  const handlePos: [number, number, number] =
+    plane === "front"
+      ? [u + dia / 2, v, 0]
+      : plane === "top"
+        ? [u + dia / 2, 0, v]
+        : [0, u + dia / 2, v];
+  const axis: "x" | "y" = plane === "right" ? "y" : "x";
+
+  return (
+    <DragHandle
+      kind="revolveRadius"
+      position={handlePos}
+      axisOrigin={origin}
+      color="#2a6f8f"
+      label="R"
+      axis={axis}
+      onDragState={onDragState}
+      onDrag={(delta) => {
+        const deltaRad = axis === "x" ? delta.x : delta.y;
+        onPatch({ widthMm: Math.max(1, dia + deltaRad * 2) });
+      }}
+    />
   );
 }
 

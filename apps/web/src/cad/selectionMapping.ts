@@ -159,3 +159,21 @@ function dragHandlesNote(feature: CadFeature): string {
   }
   return `Selected ${feature.name}`;
 }
+
+/** Live dimension readout for viewport-editable features (Properties chip / HUD). */
+export function formatFeatureDimensionReadout(
+  feature: CadFeature,
+): string | null {
+  if (feature.kind === "box") {
+    return `W ${feature.widthMm.toFixed(1)} · D ${feature.depthMm.toFixed(1)} · H ${feature.heightMm.toFixed(1)}`;
+  }
+  if (feature.kind === "hole") {
+    const x = feature.xMm ?? 0;
+    const y = feature.yMm ?? 0;
+    return `Ø${feature.diameterMm.toFixed(1)} @ (${x.toFixed(1)}, ${y.toFixed(1)})`;
+  }
+  if (feature.kind === "extrude") {
+    return `depth ${feature.depthMm.toFixed(1)}`;
+  }
+  return null;
+}
