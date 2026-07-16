@@ -13,7 +13,10 @@ import {
   createReference3UFeatures,
   createEmptyFeatureDocument,
   ensureSketchEntities,
+  filterValidSketchEntities,
+  isValidSketchEntity,
   parseFeatureDocument,
+  resolveSketch,
   serializeFeatureDocument,
   sketchEntitiesFromProfile,
   syncSketchProfileFromEntities,
@@ -63,6 +66,33 @@ describe("feature document", () => {
     assert.equal(base.heightMm, 5);
     assert.ok(hole && hole.kind === "hole");
     assert.equal(hole.diameterMm, 8);
+  });
+
+  it("applyParameters makes mount hole deeper than wall", () => {
+    const doc = applyParameters({
+      ...createBracketDemo(),
+      parameters: { wall: 12, holeDia: 6 },
+    });
+    const hole = doc.features.find((f) => f.id === "f-hole");
+    assert.ok(hole && hole.kind === "hole");
+    assert.equal(hole.depthMm, 14);
+    assert.ok(hole.depthMm > 12);
+  });
+
+  it("applyParameters keeps through-hole depth when wall is 7+", () => {
+    for (const wall of [7, 10, 15]) {
+      const doc = applyParameters({
+        ...createBracketDemo(),
+        parameters: { wall, holeDia: 6 },
+      });
+      const hole = doc.features.find((f) => f.id === "f-hole");
+      assert.ok(hole && hole.kind === "hole");
+      assert.ok(
+        hole.depthMm > wall,
+        `hole depth ${hole.depthMm} must exceed wall ${wall}`,
+      );
+      assert.equal(hole.zMm, -1);
+    }
   });
 
   it("applyParameters drives 3U u/height", () => {
@@ -147,6 +177,9 @@ describe("feature document", () => {
     const box = doc.features.find((f) => f.id === "f-base");
     assert.ok(box && box.kind === "box");
     assert.equal(box.heightMm, 7);
+    const hole = doc.features.find((f) => f.id === "f-hole");
+    assert.ok(hole && hole.kind === "hole");
+    assert.ok(hole.depthMm > 7);
   });
 
   it("setParameter merges with existing parameters", () => {
@@ -301,5 +334,115 @@ describe("sketch entities", () => {
     );
     assert.ok(again);
     assert.deepEqual(again.entities, sketch.entities);
+  });
+
+  it("syncSketchProfileFromEntities uses bbox center for multi-rect", () => {
+    const entities = [
+      createRectSketchEntity(10, 10, 5, 5),
+      createRectSketchEntity(10, 10, 25, 5),
+    ];
+    const sketch: SketchFeature = {
+      ...baseRectSketch,
+      entities,
+      offsetUMm: 0,
+      offsetVMm: 0,
+    };
+    const synced = syncSketchProfileFromEntities(sketch);
+    assert.equal(synced.widthMm, 30);
+    assert.equal(synced.heightMm, 10);
+    assert.equal(synced.offsetUMm, 15);
+    assert.equal(synced.offsetVMm, 5);
+  });
+
+  it("filterValidSketchEntities rejects zero-size rects", () => {
+    const entities: SketchFeature["entities"] = [
+      { id: "bad", kind: "rect", x: 0, y: 0, widthMm: 0, heightMm: 10 },
+      createRectSketchEntity(20, 10, 0, 0),
+    ];
+    const valid = filterValidSketchEntities(entities!);
+    assert.equal(valid.length, 1);
+    assert.equal(valid[0]?.kind, "rect");
+    if (valid[0]?.kind === "rect") assert.equal(valid[0].widthMm, 20);
+  });
+
+  it("isValidSketchEntity rejects degenerate geometry", () => {
+    assert.equal(
+      isValidSketchEntity({
+        id: "r",
+        kind: "rect",
+        x: 0,
+        y: 0,
+        widthMm: 0,
+        heightMm: 5,
+      }),
+      false,
+    );
+    assert.equal(
+      isValidSketchEntity({
+        id: "l",
+        kind: "line",
+        x1: 0,
+        y1: 0,
+        x2: 0,
+        y2: 0,
+      }),
+      false,
+    );
+    assert.equal(isValidSketchEntity(createCircleSketchEntity(4)), true);
+  });
+
+  it("resolveSketch filters invalid entities and clamps profile dims", () => {
+    const doc = createEmptyFeatureDocument("resolve");
+    const sketch: SketchFeature = {
+      id: "f-sk",
+      name: "Sketch",
+      kind: "sketch",
+      plane: "front",
+      profile: "rect",
+      widthMm: 40,
+      heightMm: 30,
+      entities: [
+        { id: "bad", kind: "rect", x: 0, y: 0, widthMm: 0, heightMm: 0 },
+        createRectSketchEntity(20, 10, 0, 0),
+      ],
+    };
+    doc.features = [sketch];
+
+    const resolved = resolveSketch(doc, sketch.id, {
+      plane: "front",
+      profile: "rect",
+      widthMm: 1,
+      heightMm: 1,
+    });
+    assert.equal(resolved.entities?.length, 1);
+    assert.equal(resolved.widthMm, 20);
+    assert.equal(resolved.heightMm, 10);
+  });
+
+  it("resolveSketch falls back when sketch has only invalid solids", () => {
+    const doc = createEmptyFeatureDocument("invalid");
+    const sketch: SketchFeature = {
+      id: "f-empty",
+      name: "Empty sketch",
+      kind: "sketch",
+      plane: "front",
+      profile: "rect",
+      widthMm: 0,
+      heightMm: 0,
+      entities: [
+        { id: "bad", kind: "rect", x: 0, y: 0, widthMm: 0, heightMm: 0 },
+      ],
+    };
+    doc.features = [sketch];
+
+    const resolved = resolveSketch(doc, sketch.id, {
+      plane: "front",
+      profile: "rect",
+      widthMm: 25,
+      heightMm: 15,
+    });
+    assert.equal(resolved.entities?.length, 0);
+    assert.equal(resolved.widthMm, 25);
+    assert.equal(resolved.heightMm, 15);
   });
 });

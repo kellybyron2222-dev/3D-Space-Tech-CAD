@@ -9,6 +9,8 @@ import {
 import {
   activeFeatures,
   applyParameters,
+  filterValidSketchEntities,
+  MIN_SKETCH_ENTITY_MM,
   resolveSketch,
   type CadFeature,
   type FeatureDocument,
@@ -16,29 +18,35 @@ import {
   type ProfileKind,
   type SketchEntity,
 } from "@spacetech/sfd-lang";
+import {
+  clampEdgeModificationRadius,
+  cloneShape3D,
+  isNoEdgeSelectedError,
+  meshEdgeIndexFilterSlot,
+} from "./featureResilience";
 
 /** Replicad fillet/chamfer edge filter: `(e) => e.inPlane(...)` etc. */
 type EdgeFilterFn = (e: EdgeFinder) => EdgeFinder;
 
 /**
- * Mesh `edgeIndices` are viewport tessellation selection hints (Shift+click),
- * NOT OCCT B-rep edge ids — true index mapping is not available here.
- *
- * Best-effort strategy: map each hint index mod 6 to plane/direction filters
- * (XY / XZ / YZ / X / Y / Z). Multiple hints are combined with `either`.
+ * KERNEL assumptions (replicad / OCCT):
+ * - `translate`, `mirror`, etc. consume the receiver; clone before reuse.
+ * - `fillet`/`chamfer` throw when a filtered op matches zero edges.
+ * - Oversized fillet/chamfer radii throw; we halve and retry, then soft-fail.
+ * - Mesh `edgeIndices` are tessellation hints, not B-rep ids (see featureResilience).
  */
 function edgeFilterFromMeshIndices(edgeIndices: number[]): EdgeFilterFn {
   const filterForIndex = (idx: number): ((f: EdgeFinder) => EdgeFinder) => {
-    switch (idx % 6) {
-      case 0:
+    switch (meshEdgeIndexFilterSlot(idx)) {
+      case "XY":
         return (f) => f.inPlane("XY");
-      case 1:
+      case "XZ":
         return (f) => f.inPlane("XZ");
-      case 2:
+      case "YZ":
         return (f) => f.inPlane("YZ");
-      case 3:
+      case "dirX":
         return (f) => f.inDirection("X");
-      case 4:
+      case "dirY":
         return (f) => f.inDirection("Y");
       default:
         return (f) => f.inDirection("Z");
@@ -46,12 +54,48 @@ function edgeFilterFromMeshIndices(edgeIndices: number[]): EdgeFilterFn {
   };
 
   if (edgeIndices.length === 1) {
-    const pick = filterForIndex(edgeIndices[0]);
+    const pick = filterForIndex(edgeIndices[0]!);
     return (e) => pick(e);
   }
 
   const picks = edgeIndices.map(filterForIndex);
   return (e) => e.either(picks);
+}
+
+function runEdgeModification(
+  shape: Shape3D,
+  radius: number,
+  op: "fillet" | "chamfer",
+  filter?: EdgeFilterFn,
+): Shape3D {
+  if (op === "fillet") {
+    return filter ? shape.fillet(radius, filter) : shape.fillet(radius);
+  }
+  return filter ? shape.chamfer(radius, filter) : shape.chamfer(radius);
+}
+
+/** Halve radius on OCCT failure; clone each attempt so the source solid survives. */
+function tryEdgeModificationWithFallback(
+  source: Shape3D,
+  radius: number,
+  op: "fillet" | "chamfer",
+  filter?: EdgeFilterFn,
+): Shape3D {
+  let attemptRadius = radius;
+  const minRadius = 0.05;
+
+  while (attemptRadius >= minRadius) {
+    try {
+      const work = cloneShape3D(source);
+      return runEdgeModification(work, attemptRadius, op, filter);
+    } catch (err) {
+      if (isNoEdgeSelectedError(err)) throw err;
+      attemptRadius = Math.max(minRadius, attemptRadius * 0.5);
+      if (attemptRadius <= minRadius) break;
+    }
+  }
+
+  return source;
 }
 
 function applyEdgeModification(
@@ -60,32 +104,34 @@ function applyEdgeModification(
   edgeIndices: number[] | undefined,
   op: "fillet" | "chamfer",
 ): Shape3D {
-  const run = (filter?: EdgeFilterFn) =>
-    op === "fillet"
-      ? filter
-        ? current.fillet(radius, filter)
-        : current.fillet(radius)
-      : filter
-        ? current.chamfer(radius, filter)
-        : current.chamfer(radius);
+  const clamped = clampEdgeModificationRadius(radius);
 
   if (!edgeIndices?.length) {
     try {
-      return run();
+      return tryEdgeModificationWithFallback(current, clamped, op);
     } catch {
       return current;
     }
   }
 
+  const filter = edgeFilterFromMeshIndices(edgeIndices);
   try {
-    return run(edgeFilterFromMeshIndices(edgeIndices));
-  } catch {
-    try {
-      return run();
-    } catch {
-      return current;
+    return tryEdgeModificationWithFallback(current, clamped, op, filter);
+  } catch (err) {
+    // Do not fall back to global fillet — that silently changes all edges.
+    if (isNoEdgeSelectedError(err)) {
+      console.warn(
+        `${op}: mesh edge hints matched no B-rep edges; feature skipped`,
+      );
     }
+    return current;
   }
+}
+
+function clampProfileDim(value: number, fallback = 1): number {
+  return Number.isFinite(value) && value >= MIN_SKETCH_ENTITY_MM
+    ? value
+    : fallback;
 }
 
 function profileSolid(
@@ -143,40 +189,45 @@ function solidsFromSketchEntities(
   depthMm: number,
 ): Shape3D[] {
   const solids: Shape3D[] = [];
-  for (const entity of entities) {
-    if (entity.kind === "rect") {
-      solids.push(
-        profileSolid(
-          plane,
-          "rect",
-          entity.widthMm,
-          entity.heightMm,
-          depthMm,
-          entity.x + entity.widthMm / 2,
-          entity.y + entity.heightMm / 2,
-        ),
-      );
-    } else if (entity.kind === "circle") {
-      solids.push(
-        profileSolid(
-          plane,
-          "circle",
-          entity.diameterMm,
-          entity.diameterMm,
-          depthMm,
-          entity.cx,
-          entity.cy,
-        ),
-      );
+  const depth = Math.max(MIN_SKETCH_ENTITY_MM, depthMm);
+  for (const entity of filterValidSketchEntities(entities)) {
+    try {
+      if (entity.kind === "rect") {
+        const w = entity.widthMm;
+        const h = entity.heightMm;
+        solids.push(
+          profileSolid(
+            plane,
+            "rect",
+            w,
+            h,
+            depth,
+            entity.x + w / 2,
+            entity.y + h / 2,
+          ),
+        );
+      } else if (entity.kind === "circle") {
+        const d = entity.diameterMm;
+        solids.push(
+          profileSolid(plane, "circle", d, d, depth, entity.cx, entity.cy),
+        );
+      }
+    } catch {
+      /* skip invalid entity */
     }
   }
   return solids;
 }
 
-function fuseSolids(solids: Shape3D[]): Shape3D {
-  let combined = solids[0];
+function fuseSolids(solids: Shape3D[]): Shape3D | null {
+  if (solids.length === 0) return null;
+  let combined = solids[0]!;
   for (let i = 1; i < solids.length; i++) {
-    combined = combined.fuse(solids[i]);
+    try {
+      combined = combined.fuse(solids[i]!);
+    } catch {
+      /* skip bad solid */
+    }
   }
   return combined;
 }
@@ -193,6 +244,57 @@ function cutSolids(current: Shape3D, solids: Shape3D[]): Shape3D {
   return result;
 }
 
+/** Through-hole cutter: start below the solid and overshoot past the top face. */
+function holeCutExtents(
+  feature: { depthMm: number; zMm?: number },
+  current: Shape3D | null,
+): { zStart: number; depthMm: number } {
+  const zStart = Math.min(feature.zMm ?? 0, -1);
+  let depthMm = Math.max(feature.depthMm + 2, 4);
+
+  if (current) {
+    try {
+      const zMax = current.boundingBox.bounds[1][2];
+      depthMm = Math.max(depthMm, zMax - zStart + 2);
+    } catch {
+      /* bbox unavailable — feature depth + margin */
+    }
+  }
+
+  return { zStart, depthMm };
+}
+
+function makeHoleCutTool(
+  feature: { diameterMm: number; depthMm: number; xMm?: number; yMm?: number; zMm?: number },
+  zStart: number,
+  depthMm: number,
+): Shape3D {
+  const r = Math.max(0.05, feature.diameterMm / 2);
+  return (makeCylinder(r, depthMm) as Shape3D).translate(
+    feature.xMm ?? 0,
+    feature.yMm ?? 0,
+    zStart,
+  );
+}
+
+function cutHole(current: Shape3D, feature: CadFeature & { kind: "hole" }): Shape3D {
+  let { zStart, depthMm } = holeCutExtents(feature, current);
+  try {
+    return current.cut(makeHoleCutTool(feature, zStart, depthMm));
+  } catch (firstErr) {
+    depthMm *= 2;
+    try {
+      return current.cut(makeHoleCutTool(feature, zStart, depthMm));
+    } catch (retryErr) {
+      console.warn(
+        `Feature ${feature.id} (hole) cut failed after retry; solid unchanged:`,
+        retryErr ?? firstErr,
+      );
+      return current;
+    }
+  }
+}
+
 function applyFeature(
   current: Shape3D | null,
   feature: CadFeature,
@@ -203,15 +305,13 @@ function applyFeature(
   }
 
   if (feature.kind === "box") {
+    // makeBaseBox already extrudes z=0→height; do NOT add height/2
+    // (that used to lift the plate so holes never broke through).
     const box = makeBaseBox(
       feature.widthMm,
       feature.depthMm,
       feature.heightMm,
-    ).translate(
-      feature.xMm ?? 0,
-      feature.yMm ?? 0,
-      (feature.zMm ?? 0) + feature.heightMm / 2,
-    );
+    ).translate(feature.xMm ?? 0, feature.yMm ?? 0, feature.zMm ?? 0);
     return current ? current.fuse(box) : box;
   }
 
@@ -224,6 +324,8 @@ function applyFeature(
       offsetUMm: feature.offsetUMm,
       offsetVMm: feature.offsetVMm,
     });
+    const profileWidth = clampProfileDim(profile.widthMm, feature.widthMm);
+    const profileHeight = clampProfileDim(profile.heightMm, feature.heightMm);
     const entitySolids =
       profile.entities && profile.entities.length > 0
         ? solidsFromSketchEntities(
@@ -232,24 +334,29 @@ function applyFeature(
             feature.depthMm,
           )
         : [];
+    const fused = entitySolids.length > 0 ? fuseSolids(entitySolids) : null;
     const solid =
-      entitySolids.length > 0
-        ? fuseSolids(entitySolids)
-        : profileSolid(
-            profile.plane,
-            profile.profile,
-            profile.widthMm,
-            profile.heightMm,
-            feature.depthMm,
-            profile.offsetUMm ?? 0,
-            profile.offsetVMm ?? 0,
-          );
+      fused ??
+      profileSolid(
+        profile.plane,
+        profile.profile,
+        profileWidth,
+        profileHeight,
+        Math.max(MIN_SKETCH_ENTITY_MM, feature.depthMm),
+        profile.offsetUMm ?? 0,
+        profile.offsetVMm ?? 0,
+      );
     if (feature.kind === "extrude") {
-      return current ? current.fuse(solid) : solid;
+      try {
+        return current ? current.fuse(solid) : solid;
+      } catch {
+        return current ?? solid;
+      }
     }
     if (!current) return makeBaseBox(1, 1, 1);
     if (entitySolids.length > 0) {
-      return cutSolids(current, entitySolids);
+      const cut = cutSolids(current, entitySolids);
+      return cut;
     }
     try {
       return current.cut(solid);
@@ -259,18 +366,8 @@ function applyFeature(
   }
 
   if (feature.kind === "hole") {
-    const r = feature.diameterMm / 2;
-    const tool = (makeCylinder(r, feature.depthMm) as Shape3D).translate(
-      feature.xMm ?? 0,
-      feature.yMm ?? 0,
-      feature.zMm ?? 0,
-    );
     if (!current) return makeBaseBox(1, 1, 1);
-    try {
-      return current.cut(tool);
-    } catch {
-      return current;
-    }
+    return cutHole(current, feature);
   }
 
   if (feature.kind === "revolve") {
@@ -295,12 +392,15 @@ function applyFeature(
       const axis: [number, number, number] =
         feature.plane === "top" ? [0, 1, 0] : [0, 0, 1];
       const solid = sketch.revolve(axis, { angle }) as Shape3D;
-      return current ? current.fuse(solid) : solid;
-    } catch {
-      const r = Math.max(feature.widthMm / 2, 0.5);
-      const h = Math.max(feature.heightMm, feature.widthMm, 4);
-      const solid = (makeCylinder(r, h) as Shape3D).translate(u, v, 0);
-      return current ? current.fuse(solid) : solid;
+      if (!current) return solid;
+      try {
+        return current.fuse(solid);
+      } catch {
+        return current;
+      }
+    } catch (err) {
+      console.warn(`Feature ${feature.id} (revolve) skipped:`, err);
+      return current ?? makeBaseBox(1, 1, 1);
     }
   }
 
@@ -326,41 +426,43 @@ function applyFeature(
 
   if (feature.kind === "mirror") {
     if (!current) return makeBaseBox(1, 1, 1);
+    const planeName =
+      feature.plane === "front"
+        ? "XY"
+        : feature.plane === "top"
+          ? "XZ"
+          : "YZ";
+    const original = cloneShape3D(current);
     try {
-      const planeName =
-        feature.plane === "front"
-          ? "XY"
-          : feature.plane === "top"
-            ? "XZ"
-            : "YZ";
-      const copy = current.mirror(planeName) as Shape3D;
-      return current.fuse(copy);
-    } catch {
-      return current;
+      const mirrored = cloneShape3D(original).mirror(planeName) as Shape3D;
+      return original.fuse(mirrored);
+    } catch (err) {
+      console.warn(`Feature ${feature.id} (mirror) skipped:`, err);
+      return original;
     }
   }
 
   if (feature.kind === "linearPattern") {
     if (!current) return makeBaseBox(1, 1, 1);
     const n = Math.max(1, Math.min(24, Math.floor(feature.count)));
-    let shape = current;
-    try {
-      for (let i = 1; i < n; i++) {
-        const base =
-          typeof current.clone === "function"
-            ? (current.clone() as Shape3D)
-            : current;
-        const copy = base.translate(
+    const template = cloneShape3D(current);
+    let shape = cloneShape3D(template);
+    for (let i = 1; i < n; i++) {
+      try {
+        const copy = cloneShape3D(template).translate(
           feature.dxMm * i,
           feature.dyMm * i,
           feature.dzMm * i,
         ) as Shape3D;
         shape = shape.fuse(copy);
+      } catch (err) {
+        console.warn(
+          `Feature ${feature.id} (linearPattern) copy ${i} skipped:`,
+          err,
+        );
       }
-      return shape;
-    } catch {
-      return current;
     }
+    return shape;
   }
 
   return current ?? makeBaseBox(1, 1, 1);
@@ -375,7 +477,12 @@ export function buildShapeFromFeatures(doc: FeatureDocument): Shape3D {
 
   let shape: Shape3D | null = null;
   for (const feature of features) {
-    shape = applyFeature(shape, feature, resolved);
+    try {
+      shape = applyFeature(shape, feature, resolved);
+    } catch (err) {
+      // One bad fillet/pattern must not blank the whole Part Studio
+      console.warn(`Feature ${feature.id} (${feature.kind}) skipped:`, err);
+    }
   }
 
   return shape ?? makeBaseBox(40, 40, 40).translate(0, 0, 20);

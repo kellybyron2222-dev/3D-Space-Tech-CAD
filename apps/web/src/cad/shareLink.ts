@@ -3,22 +3,51 @@ import {
   serializeFeatureDocument,
   type FeatureDocument,
 } from "@spacetech/sfd-lang";
+import { isRestorableFeatureDocument } from "../hooks/useAutosave";
 
 export const MAX_SHARE_HASH_LENGTH = 8000;
+
+function utf8ToBase64(json: string): string {
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToUtf8(b64: string): string {
+  const normalized = b64.replace(/-/g, "+").replace(/_/g, "/");
+  const padded =
+    normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function extractSharePayload(hash: string): string | null {
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  const match = raw.match(/(?:^|&)sfd=([^&]+)/);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
 
 /** Compact URL hash share for feature documents (no server). */
 export function encodeShareHash(doc: FeatureDocument): string {
   const json = serializeFeatureDocument(doc);
-  const b64 = btoa(unescape(encodeURIComponent(json)));
-  return `#sfd=${b64}`;
+  return `#sfd=${utf8ToBase64(json)}`;
 }
 
 export function decodeShareHash(hash: string): FeatureDocument | null {
-  const m = hash.match(/#sfd=([A-Za-z0-9+/=]+)/);
-  if (!m?.[1]) return null;
+  const payload = extractSharePayload(hash);
+  if (!payload) return null;
   try {
-    const json = decodeURIComponent(escape(atob(m[1])));
-    return parseFeatureDocument(json);
+    const json = base64ToUtf8(payload);
+    const doc = parseFeatureDocument(json);
+    if (!isRestorableFeatureDocument(doc)) return null;
+    return doc;
   } catch {
     return null;
   }

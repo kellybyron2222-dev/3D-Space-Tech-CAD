@@ -767,3 +767,44 @@ button.tool.active {
   grid-template-columns: 1.6rem 1fr;
   font-size: 0.78rem;
 }
+
+.getting-started {
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.getting-started-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.getting-started-main p {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--muted, #4a5560);
+}
+
+.getting-started-steps {
+  margin: 0.25rem 0 0.6rem;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.getting-started-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.error-banner {
+  background: #f8e8e6;
+  border-color: #c45c26;
+  color: #5c2a14;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}

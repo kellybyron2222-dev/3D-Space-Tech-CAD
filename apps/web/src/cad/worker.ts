@@ -2,6 +2,7 @@ import { expose } from "comlink";
 import {
   importSTEP,
   importSTL,
+  makeBaseBox,
   setOC,
   type AnyShape,
   type Shape3D,
@@ -30,19 +31,42 @@ const started = initOc();
 const AL_DENSITY = 2.7e-6; // kg/mm³
 
 function toPlainMesh(shape: Shape3D): TessellationResult {
-  const faces = shape.mesh({ tolerance: 0.15, angularTolerance: 0.6 });
-  const edges = shape.meshEdges({ tolerance: 0.15, angularTolerance: 0.6 });
-  return {
-    faces: {
-      vertices: Array.from(faces.vertices),
-      normals: Array.from(faces.normals),
-      triangles: Array.from(faces.triangles),
-      faceGroups: faces.faceGroups?.map((g) => ({ ...g })),
-    },
-    edges: {
-      lines: Array.from(edges.lines ?? []),
-    },
+  const fallback = (): TessellationResult => {
+    const box = makeBaseBox(40, 40, 40).translate(0, 0, 20);
+    const faces = box.mesh({ tolerance: 0.15, angularTolerance: 0.6 });
+    const edges = box.meshEdges({ tolerance: 0.15, angularTolerance: 0.6 });
+    return {
+      faces: {
+        vertices: Array.from(faces.vertices),
+        normals: Array.from(faces.normals),
+        triangles: Array.from(faces.triangles),
+        faceGroups: faces.faceGroups?.map((g) => ({ ...g })),
+      },
+      edges: {
+        lines: Array.from(edges.lines ?? []),
+      },
+    };
   };
+
+  try {
+    const faces = shape.mesh({ tolerance: 0.15, angularTolerance: 0.6 });
+    const edges = shape.meshEdges({ tolerance: 0.15, angularTolerance: 0.6 });
+    const triangles = Array.from(faces.triangles);
+    if (triangles.length === 0) return fallback();
+    return {
+      faces: {
+        vertices: Array.from(faces.vertices),
+        normals: Array.from(faces.normals),
+        triangles,
+        faceGroups: faces.faceGroups?.map((g) => ({ ...g })),
+      },
+      edges: {
+        lines: Array.from(edges.lines ?? []),
+      },
+    };
+  } catch {
+    return fallback();
+  }
 }
 
 function massFromShape(shape: Shape3D): MassPropsResult {
@@ -97,9 +121,24 @@ const api = {
 
   async rebuildFeatures(doc: FeatureDocument): Promise<RebuildResult> {
     await started;
-    const shape = buildShapeFromFeatures(doc);
+    let shape: Shape3D;
+    try {
+      shape = buildShapeFromFeatures(doc);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`Feature rebuild failed: ${detail}`);
+    }
+
+    let mesh: TessellationResult;
+    try {
+      mesh = toPlainMesh(shape);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`Tessellation failed after feature rebuild: ${detail}`);
+    }
+
     return {
-      mesh: toPlainMesh(shape),
+      mesh,
       mass: massFromShape(shape),
     };
   },

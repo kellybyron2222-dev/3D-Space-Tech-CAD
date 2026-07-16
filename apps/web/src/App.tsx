@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { saveAs } from "file-saver";
 import {
   setParameter,
+  applyParameters,
   createBracketDemo,
   createEmptyFeatureDocument,
   createCircleSketchEntity,
   createRectSketchEntity,
   createReference3UFeatures,
   ensureSketchEntities,
+  filterValidSketchEntities,
+  isValidSketchEntity,
   newFeatureId,
   newSketchEntityId,
   parseFeatureDocument,
@@ -42,19 +45,37 @@ import { AnalysisPanel } from "./components/AnalysisPanel";
 import { AssemblyPanel } from "./components/AssemblyPanel";
 import { DrawingPanel } from "./components/DrawingPanel";
 import { ExitCoach } from "./components/ExitCoach";
+import { GettingStarted } from "./components/GettingStarted";
 import { SketchEditor } from "./components/SketchEditor";
 import {
   Viewport,
   type SketchPlaceMode,
   type SketchPlacePayload,
 } from "./components/Viewport";
-import { loadAutosavedDocument, useAutosave } from "./hooks/useAutosave";
-import { useHistory } from "./hooks/useHistory";
+import {
+  clearAutosave,
+  loadAutosavedDocument,
+  useAutosave,
+} from "./hooks/useAutosave";
+import { usePartStudioHistory } from "./hooks/useHistory";
+
+function isTypingTarget(t: EventTarget | null): boolean {
+  if (
+    t instanceof HTMLInputElement ||
+    t instanceof HTMLTextAreaElement ||
+    t instanceof HTMLSelectElement
+  ) {
+    return true;
+  }
+  return t instanceof HTMLElement && t.isContentEditable;
+}
 
 function initialDocument(): FeatureDocument {
   const fromHash = decodeShareHash(window.location.hash);
-  if (fromHash) return fromHash;
-  return loadAutosavedDocument() ?? createBracketDemo();
+  if (fromHash) return applyParameters(fromHash);
+  const saved = loadAutosavedDocument();
+  if (saved) return applyParameters(saved);
+  return createBracketDemo();
 }
 
 type DocTab = "part" | "assembly" | "drawing" | "analysis";
@@ -66,12 +87,15 @@ function isEditableFeature(f: CadFeature | null): f is CadFeature {
 export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const projectRef = useRef<HTMLInputElement>(null);
-  const history = useHistory<FeatureDocument>(initialDocument());
-  const doc = history.present;
+  const initialDoc = initialDocument();
+  const studio = usePartStudioHistory({
+    doc: initialDoc,
+    selectedFeatureId: initialDoc.features[0]?.id ?? null,
+  });
+  const doc = studio.doc;
   useAutosave(doc);
-  const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(
-    doc.features[0]?.id ?? null,
-  );
+  const selectedFeatureId = studio.selectedFeatureId;
+  const setSelectedFeatureId = studio.setSelectedFeatureId;
   const [bodySelected, setBodySelected] = useState(false);
   const [measureMm, setMeasureMm] = useState<number | null>(null);
   const [measureBox, setMeasureBox] = useState<{
@@ -99,6 +123,25 @@ export function App() {
   const rebuildGen = useRef(0);
   const displayMesh = importPreview ?? mesh;
   const displayMaterial = getMaterial(materialId);
+
+  /** Drop import overlay so rebuilt feature mesh is visible again. */
+  const dismissImportPreview = useCallback(() => {
+    setImportPreview(null);
+  }, []);
+
+  const loadPartDocument = useCallback(
+    (next: FeatureDocument, selectFirst = true) => {
+      const resolved = applyParameters(next);
+      studio.resetDoc(
+        resolved,
+        selectFirst ? (resolved.features[0]?.id ?? null) : null,
+      );
+      dismissImportPreview();
+      setError(null);
+      return resolved;
+    },
+    [studio.resetDoc, dismissImportPreview],
+  );
   const displayMassKg = useMemo(() => {
     if (!mass) return null;
     return massKgFromVolume(mass.volumeMm3, displayMaterial.densityKgPerMm3);
@@ -144,7 +187,7 @@ export function App() {
         throw new Error("Empty mesh from rebuild");
       }
       if (!next.features.some((f) => f.kind === "importBody")) {
-        setImportPreview(null);
+        dismissImportPreview();
       }
       setMesh(result.mesh);
       setMass(result.mass);
@@ -154,20 +197,34 @@ export function App() {
       setFitNonce((n) => n + 1);
     } catch (err) {
       if (gen !== rebuildGen.current) return;
-      setError(err instanceof Error ? err.message : "Rebuild failed");
+      const message = err instanceof Error ? err.message : "Rebuild failed";
+      setError(message);
       setStatus("Rebuild failed");
       setMesh(null);
+      clearAutosave();
+      setUxNote(
+        `Rebuild failed: ${message}. Try “Bracket demo” or “Reset & clear autosave”.`,
+      );
     } finally {
       if (gen === rebuildGen.current) setBusy(false);
     }
-  }, []);
+  }, [dismissImportPreview]);
+
+  function resetToBracketDemo() {
+    clearAutosave();
+    const next = loadPartDocument(createBracketDemo());
+    setUxNote(
+      `Loaded ${next.name} — edit Parameters (holeDia / wall) to see the solid change.`,
+    );
+  }
 
   useEffect(() => {
     void rebuild(doc);
   }, [doc, rebuild]);
 
   function updateFeature(id: string, patch: Partial<CadFeature>) {
-    history.set((prev) => ({
+    dismissImportPreview();
+    studio.setDoc((prev) => ({
       ...prev,
       features: prev.features.map((f) =>
         f.id === id ? ({ ...f, ...patch } as CadFeature) : f,
@@ -175,8 +232,14 @@ export function App() {
     }));
   }
 
+  function setDocument(updater: (prev: FeatureDocument) => FeatureDocument) {
+    dismissImportPreview();
+    studio.setDoc(updater);
+  }
+
   function addFeature(feature: CadFeature) {
-    history.set((prev) => ({
+    dismissImportPreview();
+    studio.setDoc((prev) => ({
       ...prev,
       features: [...prev.features, feature],
     }));
@@ -206,10 +269,22 @@ export function App() {
     addFeature(feature);
   }
 
-  function addExtrudeFromSketch() {
-    const sketch = [...doc.features]
+  function sketchForNextOp(): SketchFeature | undefined {
+    if (selectedFeature?.kind === "sketch") {
+      return syncSketchProfileFromEntities(
+        ensureSketchEntities(selectedFeature),
+      );
+    }
+    const latest = [...doc.features]
       .reverse()
       .find((f): f is SketchFeature => f.kind === "sketch");
+    return latest
+      ? syncSketchProfileFromEntities(ensureSketchEntities(latest))
+      : undefined;
+  }
+
+  function addExtrudeFromSketch() {
+    const sketch = sketchForNextOp();
     const id = newFeatureId("ext");
     const feature: ExtrudeFeature = {
       id,
@@ -240,9 +315,7 @@ export function App() {
   }
 
   function addCut() {
-    const sketch = [...doc.features]
-      .reverse()
-      .find((f): f is SketchFeature => f.kind === "sketch");
+    const sketch = sketchForNextOp();
     const id = newFeatureId("cut");
     addFeature({
       id,
@@ -351,7 +424,7 @@ export function App() {
 
   function moveSelected(dir: -1 | 1) {
     if (!selectedFeatureId) return;
-    history.set((prev) => {
+    studio.setDoc((prev) => {
       const idx = prev.features.findIndex((f) => f.id === selectedFeatureId);
       const j = idx + dir;
       if (idx < 0 || j < 0 || j >= prev.features.length) return prev;
@@ -393,7 +466,8 @@ export function App() {
 
   function deleteSelected() {
     if (!selectedFeatureId) return;
-    history.set((prev) => ({
+    dismissImportPreview();
+    studio.setDoc((prev) => ({
       ...prev,
       features: prev.features.filter((f) => f.id !== selectedFeatureId),
     }));
@@ -403,20 +477,19 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target;
-      const inField =
-        t instanceof HTMLInputElement ||
-        t instanceof HTMLTextAreaElement ||
-        t instanceof HTMLSelectElement;
+      const inField = isTypingTarget(t);
 
       if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+        if (inField) return;
         e.preventDefault();
-        if (e.shiftKey) history.redo();
-        else history.undo();
+        if (e.shiftKey) studio.redo();
+        else studio.undo();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+        if (inField) return;
         e.preventDefault();
-        history.redo();
+        studio.redo();
         return;
       }
       if (e.key === "Escape") {
@@ -434,7 +507,7 @@ export function App() {
       if (tab !== "part") return;
 
       if (e.key === "End") {
-        history.set((p) => ({ ...p, rollbackIndex: null }));
+        studio.setDoc((p) => ({ ...p, rollbackIndex: null }));
         return;
       }
       if (e.key === "s" && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -453,7 +526,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [history, tab, selectedFeatureId, doc]);
+  }, [studio, tab, selectedFeatureId, doc]);
 
   async function exportStep() {
     setBusy(true);
@@ -486,7 +559,11 @@ export function App() {
       setUxNote("Part too large for URL share — use Save instead");
       return;
     }
-    window.history.replaceState(null, "", new URL(url).hash);
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${new URL(url).hash}`,
+    );
     setUxNote("Share link copied to clipboard");
   }
 
@@ -502,8 +579,7 @@ export function App() {
     try {
       const text = await file.text();
       const next = parseFeatureDocument(text);
-      history.reset(next);
-      setSelectedFeatureId(next.features[0]?.id ?? null);
+      loadPartDocument(next);
       setUxNote(`Opened ${file.name}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid project");
@@ -526,7 +602,7 @@ export function App() {
         kind: "importBody",
         sourceLabel: file.name,
       };
-      history.set((prev) => ({
+      studio.setDoc((prev) => ({
         ...prev,
         features: [...prev.features, feature],
       }));
@@ -602,16 +678,16 @@ export function App() {
           <button
             type="button"
             className="secondary"
-            disabled={!history.canUndo}
-            onClick={() => history.undo()}
+            disabled={!studio.canUndo}
+            onClick={() => studio.undo()}
           >
             Undo
           </button>
           <button
             type="button"
             className="secondary"
-            disabled={!history.canRedo}
-            onClick={() => history.redo()}
+            disabled={!studio.canRedo}
+            onClick={() => studio.redo()}
           >
             Redo
           </button>
@@ -619,8 +695,7 @@ export function App() {
             type="button"
             className="secondary"
             onClick={() => {
-              history.reset(createEmptyFeatureDocument());
-              setSelectedFeatureId(null);
+              loadPartDocument(createEmptyFeatureDocument(), false);
             }}
           >
             New
@@ -628,22 +703,27 @@ export function App() {
           <button
             type="button"
             className="secondary"
-            onClick={() => {
-              const next = createBracketDemo();
-              history.reset(next);
-              setSelectedFeatureId(next.features[0]?.id ?? null);
-              setUxNote("Loaded Bracket-Demo (table-stakes path)");
-            }}
+            onClick={resetToBracketDemo}
           >
             Bracket demo
           </button>
+          {error ? (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                clearAutosave();
+                resetToBracketDemo();
+              }}
+            >
+              Reset & clear autosave
+            </button>
+          ) : null}
           <button
             type="button"
             className="secondary"
             onClick={() => {
-              const next = createReference3UFeatures();
-              history.reset(next);
-              setSelectedFeatureId(next.features[0]?.id ?? null);
+              loadPartDocument(createReference3UFeatures());
             }}
           >
             3U template
@@ -707,12 +787,43 @@ export function App() {
 
       {tab === "part" ? (
         <>
+          <GettingStarted
+            onTryEditHole={() => {
+              const hole = doc.features.find((f) => f.kind === "hole");
+              setSelectedFeatureId(hole?.id ?? doc.features[0]?.id ?? null);
+              setUxNote(
+                "Change holeDia under Parameters (right) — the hole in the 3D view should grow/shrink.",
+              );
+            }}
+            onStartBlank={() => {
+              clearAutosave();
+              loadPartDocument(createEmptyFeatureDocument("My Part"), false);
+              setUxNote("Blank Part Studio — click Sketch, then Extrude.");
+            }}
+          />
           <ExitCoach
             doc={doc}
             onGoAssembly={() => setTab("assembly")}
             onGoDrawing={() => setTab("drawing")}
-            onDismiss={() => setUxNote("Exit coach dismissed — reopen via Bracket demo tip")}
+            onDismiss={() =>
+              setUxNote("Exit coach dismissed — use Assembly / Drawing tabs anytime")
+            }
           />
+          {error ? (
+            <div className="ux-banner error-banner" role="alert">
+              Rebuild failed: {error}
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  clearAutosave();
+                  resetToBracketDemo();
+                }}
+              >
+                Reset to Bracket demo
+              </button>
+            </div>
+          ) : null}
           <div className="cad-toolbar" role="toolbar">
             <button type="button" className="tool" disabled={busy} onClick={addSketch}>
               Sketch
@@ -811,7 +922,7 @@ export function App() {
                   type="button"
                   className="linkish"
                   onClick={() =>
-                    history.set((p) => ({ ...p, rollbackIndex: null }))
+                    studio.setDoc((p) => ({ ...p, rollbackIndex: null }))
                   }
                 >
                   End
@@ -836,7 +947,7 @@ export function App() {
                           .join(" ")}
                         onClick={() => setSelectedFeatureId(f.id)}
                         onDoubleClick={() =>
-                          history.set((p) => ({ ...p, rollbackIndex: index }))
+                          studio.setDoc((p) => ({ ...p, rollbackIndex: index }))
                         }
                       >
                         <span className="tree-kind">{f.kind}</span>
@@ -886,16 +997,18 @@ export function App() {
                     const v2 = payload.v2 ?? payload.v + 30;
                     const x = Math.min(payload.u, u2);
                     const y = Math.min(payload.v, v2);
-                    const widthMm = Math.max(1, Math.abs(u2 - payload.u));
-                    const heightMm = Math.max(1, Math.abs(v2 - payload.v));
-                    entities.push({
+                    const widthMm = Math.abs(u2 - payload.u);
+                    const heightMm = Math.abs(v2 - payload.v);
+                    const rect = {
                       id: newSketchEntityId("se"),
-                      kind: "rect",
+                      kind: "rect" as const,
                       x,
                       y,
                       widthMm,
                       heightMm,
-                    });
+                    };
+                    if (!isValidSketchEntity(rect)) return;
+                    entities.push(rect);
                   } else {
                     entities.push({
                       id: newSketchEntityId("se"),
@@ -911,7 +1024,7 @@ export function App() {
                     solveSketch(
                       syncSketchProfileFromEntities({
                         ...sk,
-                        entities,
+                        entities: filterValidSketchEntities(entities),
                       }),
                     ),
                   );
@@ -988,10 +1101,11 @@ export function App() {
                       <span>{key}</span>
                       <input
                         type="number"
-                        value={val}
+                        value={val as number}
                         onChange={(e) => {
                           const n = Number(e.target.value);
-                          history.set((prev) => setParameter(prev, key, n));
+                          if (!Number.isFinite(n)) return;
+                          setDocument((prev) => setParameter(prev, key, n));
                         }}
                       />
                     </label>
@@ -1003,7 +1117,7 @@ export function App() {
                   onClick={() => {
                     const name = window.prompt("Parameter name?");
                     if (!name?.trim()) return;
-                    history.set((prev) => setParameter(prev, name.trim(), 10));
+                    setDocument((prev) => setParameter(prev, name.trim(), 10));
                   }}
                 >
                   Add param

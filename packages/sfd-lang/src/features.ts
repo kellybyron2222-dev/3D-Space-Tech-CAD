@@ -222,7 +222,7 @@ export function createBracketDemo(options?: { includeDepth?: boolean }): Feature
         kind: "box",
         widthMm: 80,
         depthMm: 50,
-        heightMm: 8,
+        heightMm: 4,
       },
       {
         id: "f-sketch-hole",
@@ -249,10 +249,10 @@ export function createBracketDemo(options?: { includeDepth?: boolean }): Feature
         name: "Mount hole",
         kind: "hole",
         diameterMm: 6,
-        depthMm: 10,
+        depthMm: 6,
         xMm: 0,
         yMm: 0,
-        zMm: 0,
+        zMm: -1,
       },
       {
         id: "f-fillet",
@@ -433,12 +433,40 @@ export function sketchEntitiesFromProfile(
   ];
 }
 
+export const MIN_SKETCH_ENTITY_MM = 0.1;
+
+export function isValidSketchEntity(entity: SketchEntity): boolean {
+  if (entity.kind === "rect") {
+    return (
+      Number.isFinite(entity.widthMm) &&
+      Number.isFinite(entity.heightMm) &&
+      entity.widthMm >= MIN_SKETCH_ENTITY_MM &&
+      entity.heightMm >= MIN_SKETCH_ENTITY_MM
+    );
+  }
+  if (entity.kind === "circle") {
+    return (
+      Number.isFinite(entity.diameterMm) &&
+      entity.diameterMm >= MIN_SKETCH_ENTITY_MM
+    );
+  }
+  const dx = entity.x2 - entity.x1;
+  const dy = entity.y2 - entity.y1;
+  return Math.hypot(dx, dy) >= MIN_SKETCH_ENTITY_MM;
+}
+
+export function filterValidSketchEntities(
+  entities: SketchEntity[],
+): SketchEntity[] {
+  return entities.filter(isValidSketchEntity);
+}
+
 function sketchEntityBBox(entities: SketchEntity[]): {
   widthMm: number;
   heightMm: number;
   offsetUMm: number;
   offsetVMm: number;
-} {
+} | null {
   let minU = Infinity;
   let minV = Infinity;
   let maxU = -Infinity;
@@ -462,12 +490,24 @@ function sketchEntityBBox(entities: SketchEntity[]): {
       maxV = Math.max(maxV, e.cy + r);
     }
   }
+  if (!Number.isFinite(minU) || !Number.isFinite(maxU)) return null;
+  const widthMm = maxU - minU;
+  const heightMm = maxV - minV;
+  if (widthMm < MIN_SKETCH_ENTITY_MM || heightMm < MIN_SKETCH_ENTITY_MM) {
+    return null;
+  }
   return {
-    widthMm: maxU - minU,
-    heightMm: maxV - minV,
+    widthMm,
+    heightMm,
     offsetUMm: (minU + maxU) / 2,
     offsetVMm: (minV + maxV) / 2,
   };
+}
+
+function clampProfileDim(value: number, fallback = 1): number {
+  return Number.isFinite(value) && value >= MIN_SKETCH_ENTITY_MM
+    ? value
+    : fallback;
 }
 
 export function ensureSketchEntities(sketch: SketchFeature): SketchFeature {
@@ -484,44 +524,50 @@ export function syncSketchProfileFromEntities(
   const entities = sketch.entities;
   if (!entities?.length) return sketch;
 
+  const solids = entities.filter((e) => e.kind === "rect" || e.kind === "circle");
+  const bboxSource = filterValidSketchEntities(solids);
+  const bbox = bboxSource.length > 0 ? sketchEntityBBox(bboxSource) : null;
+
   const preferKind = sketch.profile === "circle" ? "circle" : "rect";
   const primary =
-    entities.find((e) => e.kind === preferKind) ??
-    entities.find((e) => e.kind === "rect" || e.kind === "circle");
+    bboxSource.find((e) => e.kind === preferKind) ??
+    bboxSource.find((e) => e.kind === "rect" || e.kind === "circle");
 
-  const bbox = sketchEntityBBox(entities);
-
-  if (primary?.kind === "rect") {
+  if (primary?.kind === "circle" && bbox) {
+    return {
+      ...sketch,
+      profile: "circle",
+      widthMm: primary.diameterMm,
+      heightMm: primary.diameterMm,
+      offsetUMm: bbox.offsetUMm,
+      offsetVMm: bbox.offsetVMm,
+      entities,
+    };
+  }
+  if (primary?.kind === "rect" && bbox) {
     return {
       ...sketch,
       profile: "rect",
       widthMm: bbox.widthMm,
       heightMm: bbox.heightMm,
-      offsetUMm: primary.x + primary.widthMm / 2,
-      offsetVMm: primary.y + primary.heightMm / 2,
-      entities,
-    };
-  }
-  if (primary?.kind === "circle") {
-    return {
-      ...sketch,
-      profile: "circle",
-      widthMm: bbox.widthMm,
-      heightMm: bbox.heightMm,
-      offsetUMm: primary.cx,
-      offsetVMm: primary.cy,
+      offsetUMm: bbox.offsetUMm,
+      offsetVMm: bbox.offsetVMm,
       entities,
     };
   }
 
-  return {
-    ...sketch,
-    widthMm: bbox.widthMm,
-    heightMm: bbox.heightMm,
-    offsetUMm: bbox.offsetUMm,
-    offsetVMm: bbox.offsetVMm,
-    entities,
-  };
+  if (bbox) {
+    return {
+      ...sketch,
+      widthMm: bbox.widthMm,
+      heightMm: bbox.heightMm,
+      offsetUMm: bbox.offsetUMm,
+      offsetVMm: bbox.offsetVMm,
+      entities,
+    };
+  }
+
+  return sketch;
 }
 
 export function resolveSketch(
@@ -543,14 +589,15 @@ export function resolveSketch(
   );
   if (!sk) return fallback;
   const synced = syncSketchProfileFromEntities(ensureSketchEntities(sk));
+  const entities = filterValidSketchEntities(synced.entities ?? []);
   return {
     plane: synced.plane,
     profile: synced.profile,
-    widthMm: synced.widthMm,
-    heightMm: synced.heightMm,
-    offsetUMm: synced.offsetUMm,
-    offsetVMm: synced.offsetVMm,
-    entities: synced.entities,
+    widthMm: clampProfileDim(synced.widthMm, fallback.widthMm),
+    heightMm: clampProfileDim(synced.heightMm, fallback.heightMm),
+    offsetUMm: synced.offsetUMm ?? fallback.offsetUMm,
+    offsetVMm: synced.offsetVMm ?? fallback.offsetVMm,
+    entities,
   };
 }
 
@@ -580,7 +627,7 @@ export function parseAssemblyDocument(raw: string): AssemblyDocument {
 
 /**
  * Apply named parameters onto known feature bindings.
- * Bracket-Demo: wall → base height, holeDia → hole diameter.
+ * Bracket-Demo: wall → base height + through-hole depth, holeDia → hole diameter.
  * Reference-3U: u → chassis/cavity XY, height → chassis Z.
  * depth / extrude → all extrude depthMm; cutDepth → all cut depthMm.
  */
@@ -597,8 +644,15 @@ export function applyParameters(doc: FeatureDocument): FeatureDocument {
       if (p.cutDepth != null && next.kind === "cut") {
         next = { ...next, depthMm: p.cutDepth };
       }
-      if (p.holeDia != null && next.kind === "hole") {
-        next = { ...next, diameterMm: p.holeDia };
+      if (next.kind === "hole") {
+        next = {
+          ...next,
+          ...(p.holeDia != null ? { diameterMm: p.holeDia } : {}),
+          // Through-hole: plate sits on z=0…wall; cutter starts at -1
+          ...(p.wall != null && next.id === "f-hole"
+            ? { depthMm: p.wall + 2, zMm: -1 }
+            : {}),
+        };
       }
       if (p.wall != null && next.kind === "box" && next.id === "f-base") {
         next = { ...next, heightMm: p.wall };

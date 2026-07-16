@@ -10,6 +10,7 @@ import {
 } from "@spacetech/sfd-lang";
 import { saveAs } from "file-saver";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
+import { mergeMassProps, mergeMeshes, translateMesh } from "../cad/assemblyMesh";
 import { getCadApi } from "../cad/client";
 import { Viewport } from "./Viewport";
 
@@ -95,38 +96,35 @@ export function AssemblyPanel({ partDoc }: { partDoc?: FeatureDocument }) {
       const cad = getCadApi();
       await cad.ready();
       const placed = applyAssemblyMates(doc);
-      const parts: FeatureDocument[] = placed.instances.map((inst) => {
-        const cloned: FeatureDocument = structuredClone(inst.part);
-        const first = cloned.features.find((f) => f.kind === "box");
-        if (first && first.kind === "box") {
-          first.xMm = (first.xMm ?? 0) + inst.xMm;
-          first.yMm = (first.yMm ?? 0) + inst.yMm;
-          first.zMm = (first.zMm ?? 0) + inst.zMm;
-        }
-        return cloned;
+      setAsm((prev) => {
+        const unchanged =
+          prev.instances.length === placed.instances.length &&
+          prev.instances.every(
+            (inst, i) => {
+              const next = placed.instances[i]!;
+              return (
+                inst.xMm === next.xMm &&
+                inst.yMm === next.yMm &&
+                inst.zMm === next.zMm
+              );
+            },
+          );
+        return unchanged ? prev : placed;
       });
 
-      const merged: FeatureDocument = {
-        version: 1,
-        name: doc.name,
-        rollbackIndex: null,
-        features: [],
-      };
-      for (const [i, part] of parts.entries()) {
-        for (const f of part.features) {
-          if (f.kind === "sketch") continue;
-          merged.features.push({
-            ...f,
-            id: `${doc.instances[i]!.id}-${f.id}`,
-            name: `${doc.instances[i]!.name}:${f.name}`,
-          });
-        }
-      }
-      const result = await cad.rebuildFeatures(merged);
-      setMesh(result.mesh);
+      const results = await Promise.all(
+        placed.instances.map((inst) =>
+          cad.rebuildFeatures(structuredClone(inst.part)),
+        ),
+      );
+      const meshes = placed.instances.map((inst, i) =>
+        translateMesh(results[i]!.mesh, inst.xMm, inst.yMm, inst.zMm),
+      );
+      const mergedMass = mergeMassProps(results.map((r) => r.mass));
+      setMesh(mergeMeshes(meshes));
       setFitNonce((n) => n + 1);
       setStatus(
-        `${doc.instances.length} instances · ${doc.mates.length} mates · ${result.mass.massKg.toFixed(3)} kg (Al L0)`,
+        `${doc.instances.length} instances · ${doc.mates.length} mates · ${mergedMass.massKg.toFixed(3)} kg (Al L0)`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Assembly failed");

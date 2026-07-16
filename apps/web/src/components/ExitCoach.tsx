@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { activeFeatures, type FeatureDocument } from "@spacetech/sfd-lang";
 
 const DISMISS_KEY = "spacetech.exitCoach.dismissed";
@@ -91,6 +91,12 @@ export function ExitCoach({
   const [dismissed, setDismissed] = useState(isExitCoachDismissed);
   const [assemblyDone, setAssemblyDone] = useState(false);
   const [drawingDone, setDrawingDone] = useState(false);
+  const docKey = doc.name;
+
+  useEffect(() => {
+    setAssemblyDone(false);
+    setDrawingDone(false);
+  }, [docKey]);
 
   const items = useMemo(
     () => buildChecklist(doc, assemblyDone, drawingDone),

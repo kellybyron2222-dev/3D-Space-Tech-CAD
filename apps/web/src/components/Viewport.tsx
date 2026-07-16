@@ -38,6 +38,8 @@ export type SketchPlacePayload = {
 const GHOST_Z_OFFSET = 0.2;
 const SKETCH_PLANE_SIZE = 2000;
 const SKETCH_PLACE_DRAG_MM = 3;
+const SKETCH_PLACE_DEFAULT_RECT_W = 40;
+const SKETCH_PLACE_DEFAULT_RECT_H = 30;
 const SKETCH_PLACE_SCREEN_DRAG_PX_SQ = 16;
 const GHOST_COLOR = "#c45c26";
 const GHOST_OPACITY = 0.35;
@@ -319,7 +321,28 @@ function SketchPlacePlane({
 
     const du = endUv.u - start.u;
     const dv = endUv.v - start.v;
-    if (Math.sqrt(du * du + dv * dv) >= SKETCH_PLACE_DRAG_MM) {
+    if (mode === "rect") {
+      if (Math.hypot(du, dv) >= SKETCH_PLACE_DRAG_MM) {
+        onPlace({
+          kind: "rect",
+          u: start.u,
+          v: start.v,
+          u2: endUv.u,
+          v2: endUv.v,
+        });
+      } else if (screenDragSq < SKETCH_PLACE_SCREEN_DRAG_PX_SQ) {
+        onPlace({
+          kind: "rect",
+          u: start.u - SKETCH_PLACE_DEFAULT_RECT_W / 2,
+          v: start.v - SKETCH_PLACE_DEFAULT_RECT_H / 2,
+          u2: start.u + SKETCH_PLACE_DEFAULT_RECT_W / 2,
+          v2: start.v + SKETCH_PLACE_DEFAULT_RECT_H / 2,
+        });
+      }
+      return;
+    }
+
+    if (Math.hypot(du, dv) >= SKETCH_PLACE_DRAG_MM) {
       onPlace({
         kind: mode,
         u: start.u,
