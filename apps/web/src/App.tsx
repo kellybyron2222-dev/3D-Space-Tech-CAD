@@ -151,22 +151,6 @@ export function App() {
     void rebuild(doc);
   }, [doc, rebuild]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
-        e.preventDefault();
-        if (e.shiftKey) history.redo();
-        else history.undo();
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "y") {
-        e.preventDefault();
-        history.redo();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [history]);
-
   function updateFeature(id: string, patch: Partial<CadFeature>) {
     history.set((prev) => ({
       ...prev,
@@ -362,6 +346,57 @@ export function App() {
     }));
     setSelectedFeatureId(null);
   }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target;
+      const inField =
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLSelectElement;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) history.redo();
+        else history.undo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+        e.preventDefault();
+        history.redo();
+        return;
+      }
+      if (e.key === "Escape") {
+        setBodySelected(false);
+        setMeasureMm(null);
+        setMeasureBox(null);
+        setFaceIndex(null);
+        setEdgeIndex(null);
+        setEdgeLengthMm(null);
+        setSketchPlaceMode(null);
+        return;
+      }
+      if (inField) return;
+
+      if (tab !== "part") return;
+
+      if (e.key === "s" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        addSketch();
+      } else if (e.key === "e" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        addExtrudeFromSketch();
+      } else if (
+        (e.key === "Delete" || e.key === "Backspace") &&
+        selectedFeatureId
+      ) {
+        e.preventDefault();
+        deleteSelected();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [history, tab, selectedFeatureId, doc]);
 
   async function exportStep() {
     setBusy(true);

@@ -536,9 +536,11 @@ export function Viewport({
 
   return (
     <div className="viewport-canvas cad-viewport">
-      <div className="viewport-hud">
+      <div
+        className={`viewport-hud${placingSketch ? " viewport-hud--placing" : ""}`}
+      >
         {placingSketch && placeHint
-          ? placeHint
+          ? `[SKETCH] ${placeHint}`
           : mesh
             ? `${triCount.toLocaleString()} tris · ${faceCount} faces · ${edgeCount} edges · click face · Shift+click edge`
             : status}

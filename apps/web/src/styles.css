@@ -365,6 +365,10 @@ button.tool.active {
   pointer-events: none;
 }
 
+.viewport-hud--placing {
+  color: #c45c26;
+}
+
 .viewport-fit {
   position: absolute;
   right: 0.5rem;
