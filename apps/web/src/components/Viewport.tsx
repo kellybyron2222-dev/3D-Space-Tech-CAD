@@ -542,7 +542,7 @@ export function Viewport({
         {placingSketch && placeHint
           ? `[SKETCH] ${placeHint}`
           : mesh
-            ? `${triCount.toLocaleString()} tris · ${faceCount} faces · ${edgeCount} edges · click face · Shift+click edge`
+            ? `${triCount.toLocaleString()} tris · ${faceCount} faces · ${edgeCount} edges · click face · Shift+click edge${edgeIndex != null ? ` · edge #${edgeIndex}` : ""}`
             : status}
       </div>
       {mesh && onFit ? (
