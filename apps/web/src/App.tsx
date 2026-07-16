@@ -97,6 +97,9 @@ type ActiveTool =
   | "linearPattern"
   | "select";
 
+const SELECT_TOOL_HINT =
+  "Select: click face to pick feature · Alt+click cycle · drag handles · Esc clears";
+
 const ACTIVE_TOOL_HINTS: Record<
   Exclude<ActiveTool, null | "select">,
   string
@@ -1043,8 +1046,17 @@ export function App() {
               type="button"
               className={activeTool === "select" ? "tool active" : "tool"}
               disabled={busy}
+              title="Select mode — click faces to pick features, drag handles to edit"
               onClick={() =>
-                setActiveTool((prev) => (prev === "select" ? null : "select"))
+                setActiveTool((prev) => {
+                  const next = prev === "select" ? null : "select";
+                  if (next === "select") {
+                    setUxNote(
+                      "Select mode — click a face to pick Base/Hole/Extrude; drag colored handles to edit.",
+                    );
+                  }
+                  return next;
+                })
               }
             >
               Select
@@ -1166,7 +1178,15 @@ export function App() {
               Delete
             </button>
             <span className="cad-status">
-              {draggingHandles ? "Editing…" : busy ? "Rebuilding…" : status}
+              {draggingHandles
+                ? "Editing…"
+                : busy
+                  ? "Rebuilding…"
+                  : activeTool === "select"
+                    ? `Select mode · ${status}`
+                    : !activeTool
+                      ? `${status} · H/C/F click-where`
+                      : status}
               {error ? ` · ${error}` : ""}
             </span>
           </div>
@@ -1231,9 +1251,16 @@ export function App() {
                 selected={bodySelected}
                 onSelectBody={onViewportBodySelect}
                 toolHint={
-                  activeTool && activeTool !== "select"
-                    ? ACTIVE_TOOL_HINTS[activeTool]
-                    : null
+                  activeTool === "select"
+                    ? SELECT_TOOL_HINT
+                    : activeTool
+                      ? ACTIVE_TOOL_HINTS[activeTool]
+                      : null
+                }
+                placementCrosshair={
+                  activeTool != null &&
+                  activeTool !== "select" &&
+                  isPlacementTool
                 }
                 dimensionReadout={selectedFeatureDimensions}
                 placementTool={

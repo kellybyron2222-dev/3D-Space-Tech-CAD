@@ -64,6 +64,11 @@ function buildChecklist(
       label: "STEP export",
       tip: "Export STEP from top bar",
     },
+    {
+      id: "place",
+      label: "Place tools",
+      tip: "H hole · C cut · F fillet — pick tool, click where to place (Enter ok)",
+    },
   ];
 }
 
@@ -143,7 +148,7 @@ export function ExitCoach({
             Exit test {done}/{total}
           </strong>
           <span className="exit-coach-sub">
-            {total} checklist steps + STEP export tip
+            {total} checklist steps · H/C/F click-where placement
           </span>
         </div>
         <ol className="exit-coach-list">

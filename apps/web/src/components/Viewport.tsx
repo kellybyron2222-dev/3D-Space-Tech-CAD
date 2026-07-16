@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls as ThreeOrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as THREE from "three";
@@ -594,6 +594,7 @@ export function Viewport({
   onFeatureDragStart,
   onFeatureDragEnd,
   toolHint = null,
+  placementCrosshair = false,
   dimensionReadout = null,
   placementTool = null,
 }: {
@@ -616,6 +617,8 @@ export function Viewport({
   onFeatureDragStart?: () => void;
   onFeatureDragEnd?: () => void;
   toolHint?: string | null;
+  /** Crosshair cursor for placement tools (hole/cut/etc.) — not select mode */
+  placementCrosshair?: boolean;
   /** Live dims for selected editable feature */
   dimensionReadout?: string | null;
   /** Active place tool that shows a hover ghost */
@@ -627,6 +630,24 @@ export function Viewport({
     y: number;
     z: number;
   } | null>(null);
+  const hoverSnapMm = 0.5;
+  const setHoverPointSnapped = useCallback(
+    (point: { x: number; y: number; z: number } | null) => {
+      if (!point) {
+        setHoverPoint(null);
+        return;
+      }
+      const snapped = {
+        x: Math.round(point.x / hoverSnapMm) * hoverSnapMm,
+        y: Math.round(point.y / hoverSnapMm) * hoverSnapMm,
+        z: point.z,
+      };
+      setHoverPoint((prev) =>
+        prev && prev.x === snapped.x && prev.y === snapped.y ? prev : snapped,
+      );
+    },
+    [],
+  );
   const dpr = Math.min(
     typeof window !== "undefined" ? window.devicePixelRatio : 1,
     2,
@@ -663,7 +684,7 @@ export function Viewport({
 
   return (
     <div
-      className={`viewport-canvas cad-viewport${toolHint ? " tool-cursor-crosshair" : ""}`}
+      className={`viewport-canvas cad-viewport${placementCrosshair ? " tool-cursor-crosshair" : ""}`}
     >
       <div
         className={`viewport-hud${placingSketch || toolHint || handleDragging ? " viewport-hud--placing" : ""}`}
@@ -719,7 +740,7 @@ export function Viewport({
                 faceIndex={faceIndex ?? null}
                 edgeIndex={edgeIndex ?? null}
                 selectionEnabled={!placingSketch}
-                onHoverPoint={placementTool ? setHoverPoint : undefined}
+                onHoverPoint={placementTool ? setHoverPointSnapped : undefined}
                 onSelectFace={(i, opts) => {
                   onSelectBody?.(i, opts);
                 }}

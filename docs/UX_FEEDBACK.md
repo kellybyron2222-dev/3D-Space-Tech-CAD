@@ -135,3 +135,10 @@ Treated as wrong product shape. Analysis lives under **Analysis** tab.
 - HUD switches to live `Hole @ (x, y)` / `Cut @ (x, y)` while hovering the solid
 
 **Sim feedback:** "Seeing the cutter before I click removes the ?preset rectangle? mystery ? placement feels intentional."
+
+### Loop L ? Select clarity + coach shortcuts (pre-19:00)
+- Hover place ghost snaps to 0.5 mm grid before re-render (less pointer-move churn)
+- ExitCoach sub + tip call out H/C/F and click-where placement
+- Select tool: title, HUD hint, status bar label; idle status shows `H/C/F click-where`
+
+**Sim feedback:** "Select mode finally reads as a mode, not a mystery toggle. Coach + status bar teach H/C/F without opening Getting Started."
