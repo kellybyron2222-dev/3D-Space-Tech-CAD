@@ -3,6 +3,7 @@ import {
   drawRoundedRectangle,
   makeBaseBox,
   makeCylinder,
+  type EdgeFinder,
   type Shape3D,
 } from "replicad";
 import {
@@ -14,6 +15,77 @@ import {
   type PlaneId,
   type ProfileKind,
 } from "@spacetech/sfd-lang";
+
+/** Replicad fillet/chamfer edge filter: `(e) => e.inPlane(...)` etc. */
+type EdgeFilterFn = (e: EdgeFinder) => EdgeFinder;
+
+/**
+ * Mesh `edgeIndices` are viewport tessellation selection hints (Shift+click),
+ * NOT OCCT B-rep edge ids — true index mapping is not available here.
+ *
+ * Best-effort strategy: map each hint index mod 6 to plane/direction filters
+ * (XY / XZ / YZ / X / Y / Z). Multiple hints are combined with `either`.
+ */
+function edgeFilterFromMeshIndices(edgeIndices: number[]): EdgeFilterFn {
+  const filterForIndex = (idx: number): ((f: EdgeFinder) => EdgeFinder) => {
+    switch (idx % 6) {
+      case 0:
+        return (f) => f.inPlane("XY");
+      case 1:
+        return (f) => f.inPlane("XZ");
+      case 2:
+        return (f) => f.inPlane("YZ");
+      case 3:
+        return (f) => f.inDirection("X");
+      case 4:
+        return (f) => f.inDirection("Y");
+      default:
+        return (f) => f.inDirection("Z");
+    }
+  };
+
+  if (edgeIndices.length === 1) {
+    const pick = filterForIndex(edgeIndices[0]);
+    return (e) => pick(e);
+  }
+
+  const picks = edgeIndices.map(filterForIndex);
+  return (e) => e.either(picks);
+}
+
+function applyEdgeModification(
+  current: Shape3D,
+  radius: number,
+  edgeIndices: number[] | undefined,
+  op: "fillet" | "chamfer",
+): Shape3D {
+  const run = (filter?: EdgeFilterFn) =>
+    op === "fillet"
+      ? filter
+        ? current.fillet(radius, filter)
+        : current.fillet(radius)
+      : filter
+        ? current.chamfer(radius, filter)
+        : current.chamfer(radius);
+
+  if (!edgeIndices?.length) {
+    try {
+      return run();
+    } catch {
+      return current;
+    }
+  }
+
+  try {
+    return run(edgeFilterFromMeshIndices(edgeIndices));
+  } catch {
+    try {
+      return run();
+    } catch {
+      return current;
+    }
+  }
+}
 
 function profileSolid(
   plane: PlaneId,
@@ -163,20 +235,22 @@ function applyFeature(
 
   if (feature.kind === "fillet") {
     if (!current) return makeBaseBox(1, 1, 1);
-    try {
-      return current.fillet(feature.radiusMm);
-    } catch {
-      return current;
-    }
+    return applyEdgeModification(
+      current,
+      feature.radiusMm,
+      feature.edgeIndices,
+      "fillet",
+    );
   }
 
   if (feature.kind === "chamfer") {
     if (!current) return makeBaseBox(1, 1, 1);
-    try {
-      return current.chamfer(feature.distanceMm);
-    } catch {
-      return current;
-    }
+    return applyEdgeModification(
+      current,
+      feature.distanceMm,
+      feature.edgeIndices,
+      "chamfer",
+    );
   }
 
   if (feature.kind === "mirror") {

@@ -12,7 +12,8 @@
     "dev": "pnpm --filter @spacetech/web dev",
     "test": "pnpm -r run test",
     "lint": "pnpm -r run lint",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r run typecheck",
+    "smoke:step": "node scripts/smoke-step.mjs"
   },
   "license": "Apache-2.0"
 }

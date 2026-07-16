@@ -37,9 +37,33 @@ Treated as wrong product shape. Analysis lives under **Analysis** tab.
 - Drawing SVG exports three ortho views
 - All unit tests green; pushed `9f6f9fc` to main
 
+### Loop A (2h session) — Sketch entities
+- Multi-entity sketch model (line/rect/circle) + SketchEditor panel
+- Viewport ghost renders all entities
+- Extrude/Cut still driven via syncSketchProfileFromEntities
+
+**Sim:** “Finally can edit more than one profile number — still numeric, not click-draw, but feels like a sketcher shell.”
+
+### Loop B — Constraint solve lite
+- `solveSketch` / `applyDrivingDimension`: H/V on lines, coincident snap, driving width/height/dia
+- Wired through SketchEditor onChange
+
+**Sim:** “Changing width dim resizes rect; H/V actually flatten lines. Want click-to-place next.”
+
+### Loop C — Edge selection
+- Shift+click cycles mesh edges; highlight + length measure
+- Fillet/Chamfer store edgeIndices; Bind to feature (kernel still global fillet fallback)
+
+**Sim:** “Edge highlight is real CAD muscle memory. Binding edges without kernel filter yet is honest but incomplete.”
+
+### Loop D — Exit path
+- ExitCoach checklist banner; Drawing title block + hole callout; smoke:step script
+
+**Sim:** “Coach makes the SME exit test obvious. Drawing still bbox — good enough for Phase A demo.”
+
 ### Still open (next sessions)
-- Interactive constrained sketch editor
-- Edge-accurate fillet selection
+- Click-to-place sketch tools on plane
+- True OCCT edge-filtered fillet
 - True silhouette drawing projection
 - Full geometric mate solver
 - AI feature patches

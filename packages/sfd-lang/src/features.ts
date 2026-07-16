@@ -44,6 +44,11 @@ export type SketchConstraint =
   | { kind: "equal"; note?: string }
   | { kind: "dimension"; valueMm: number; label?: string };
 
+export type SketchEntity =
+  | { id: string; kind: "line"; x1: number; y1: number; x2: number; y2: number }
+  | { id: string; kind: "rect"; x: number; y: number; widthMm: number; heightMm: number }
+  | { id: string; kind: "circle"; cx: number; cy: number; diameterMm: number };
+
 /** Sketch profile on a datum plane (consumed by extrude/cut/revolve). */
 export interface SketchFeature extends FeatureBase {
   kind: "sketch";
@@ -55,6 +60,8 @@ export interface SketchFeature extends FeatureBase {
   heightMm: number;
   offsetUMm?: number;
   offsetVMm?: number;
+  /** Multi-entity sketch geometry (optional; derived from profile when absent). */
+  entities?: SketchEntity[];
   /** Constraint tags for UI / future solver */
   constraints?: SketchConstraint[];
 }
@@ -99,11 +106,14 @@ export interface RevolveFeature extends FeatureBase {
 export interface FilletFeature extends FeatureBase {
   kind: "fillet";
   radiusMm: number;
+  /** Mesh edge indices when user Shift+clicked edges (kernel may fall back to global). */
+  edgeIndices?: number[];
 }
 
 export interface ChamferFeature extends FeatureBase {
   kind: "chamfer";
   distanceMm: number;
+  edgeIndices?: number[];
 }
 
 /** Cylindrical hole cut along +Z from z0 */
@@ -220,6 +230,15 @@ export function createBracketDemo(): FeatureDocument {
         heightMm: 6,
         offsetUMm: 0,
         offsetVMm: 0,
+        entities: [
+          {
+            id: "se-hole",
+            kind: "circle",
+            cx: 0,
+            cy: 0,
+            diameterMm: 6,
+          },
+        ],
       },
       {
         id: "f-hole",
@@ -345,6 +364,162 @@ export function newFeatureId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+export function newSketchEntityId(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export function createRectSketchEntity(
+  widthMm: number,
+  heightMm: number,
+  offsetU = 0,
+  offsetV = 0,
+): SketchEntity {
+  return {
+    id: newSketchEntityId("se"),
+    kind: "rect",
+    x: offsetU - widthMm / 2,
+    y: offsetV - heightMm / 2,
+    widthMm,
+    heightMm,
+  };
+}
+
+export function createCircleSketchEntity(
+  diameterMm: number,
+  cx = 0,
+  cy = 0,
+): SketchEntity {
+  return {
+    id: newSketchEntityId("se"),
+    kind: "circle",
+    cx,
+    cy,
+    diameterMm,
+  };
+}
+
+export function sketchEntitiesFromProfile(
+  sketch: Pick<
+    SketchFeature,
+    "profile" | "widthMm" | "heightMm" | "offsetUMm" | "offsetVMm"
+  >,
+): SketchEntity[] {
+  const offsetU = sketch.offsetUMm ?? 0;
+  const offsetV = sketch.offsetVMm ?? 0;
+  if (sketch.profile === "circle") {
+    return [
+      {
+        id: newSketchEntityId("se"),
+        kind: "circle",
+        cx: offsetU,
+        cy: offsetV,
+        diameterMm: sketch.widthMm,
+      },
+    ];
+  }
+  return [
+    {
+      id: newSketchEntityId("se"),
+      kind: "rect",
+      x: offsetU - sketch.widthMm / 2,
+      y: offsetV - sketch.heightMm / 2,
+      widthMm: sketch.widthMm,
+      heightMm: sketch.heightMm,
+    },
+  ];
+}
+
+function sketchEntityBBox(entities: SketchEntity[]): {
+  widthMm: number;
+  heightMm: number;
+  offsetUMm: number;
+  offsetVMm: number;
+} {
+  let minU = Infinity;
+  let minV = Infinity;
+  let maxU = -Infinity;
+  let maxV = -Infinity;
+  for (const e of entities) {
+    if (e.kind === "line") {
+      minU = Math.min(minU, e.x1, e.x2);
+      maxU = Math.max(maxU, e.x1, e.x2);
+      minV = Math.min(minV, e.y1, e.y2);
+      maxV = Math.max(maxV, e.y1, e.y2);
+    } else if (e.kind === "rect") {
+      minU = Math.min(minU, e.x);
+      maxU = Math.max(maxU, e.x + e.widthMm);
+      minV = Math.min(minV, e.y);
+      maxV = Math.max(maxV, e.y + e.heightMm);
+    } else {
+      const r = e.diameterMm / 2;
+      minU = Math.min(minU, e.cx - r);
+      maxU = Math.max(maxU, e.cx + r);
+      minV = Math.min(minV, e.cy - r);
+      maxV = Math.max(maxV, e.cy + r);
+    }
+  }
+  return {
+    widthMm: maxU - minU,
+    heightMm: maxV - minV,
+    offsetUMm: (minU + maxU) / 2,
+    offsetVMm: (minV + maxV) / 2,
+  };
+}
+
+export function ensureSketchEntities(sketch: SketchFeature): SketchFeature {
+  if (sketch.entities?.length) return sketch;
+  return {
+    ...sketch,
+    entities: sketchEntitiesFromProfile(sketch),
+  };
+}
+
+export function syncSketchProfileFromEntities(
+  sketch: SketchFeature,
+): SketchFeature {
+  const entities = sketch.entities;
+  if (!entities?.length) return sketch;
+
+  const preferKind = sketch.profile === "circle" ? "circle" : "rect";
+  const primary =
+    entities.find((e) => e.kind === preferKind) ??
+    entities.find((e) => e.kind === "rect" || e.kind === "circle");
+
+  const bbox = sketchEntityBBox(entities);
+
+  if (primary?.kind === "rect") {
+    return {
+      ...sketch,
+      profile: "rect",
+      widthMm: bbox.widthMm,
+      heightMm: bbox.heightMm,
+      offsetUMm: primary.x + primary.widthMm / 2,
+      offsetVMm: primary.y + primary.heightMm / 2,
+      entities,
+    };
+  }
+  if (primary?.kind === "circle") {
+    return {
+      ...sketch,
+      profile: "circle",
+      widthMm: bbox.widthMm,
+      heightMm: bbox.heightMm,
+      offsetUMm: primary.cx,
+      offsetVMm: primary.cy,
+      entities,
+    };
+  }
+
+  return {
+    ...sketch,
+    widthMm: bbox.widthMm,
+    heightMm: bbox.heightMm,
+    offsetUMm: bbox.offsetUMm,
+    offsetVMm: bbox.offsetVMm,
+    entities,
+  };
+}
+
 export function resolveSketch(
   doc: FeatureDocument,
   sketchId: string | undefined,
@@ -355,6 +530,7 @@ export function resolveSketch(
     heightMm: number;
     offsetUMm?: number;
     offsetVMm?: number;
+    entities?: SketchEntity[];
   },
 ) {
   if (!sketchId) return fallback;
@@ -362,13 +538,15 @@ export function resolveSketch(
     (f): f is SketchFeature => f.id === sketchId && f.kind === "sketch",
   );
   if (!sk) return fallback;
+  const synced = syncSketchProfileFromEntities(ensureSketchEntities(sk));
   return {
-    plane: sk.plane,
-    profile: sk.profile,
-    widthMm: sk.widthMm,
-    heightMm: sk.heightMm,
-    offsetUMm: sk.offsetUMm,
-    offsetVMm: sk.offsetVMm,
+    plane: synced.plane,
+    profile: synced.profile,
+    widthMm: synced.widthMm,
+    heightMm: synced.heightMm,
+    offsetUMm: synced.offsetUMm,
+    offsetVMm: synced.offsetVMm,
+    entities: synced.entities,
   };
 }
 

@@ -10,18 +10,26 @@ import {
 } from "replicad-threejs-helper";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
 
+const EDGE_HIGHLIGHT_COLOR = "#e8a54b";
+
+export function edgeCountFromLines(lines: number[] | undefined): number {
+  return Math.floor((lines?.length ?? 0) / 6);
+}
+
 export function ReplicadMesh({
   faces,
   edges,
   color = "#5f7d95",
   highlightFaceIndex = null,
+  highlightEdgeIndex = null,
 }: TessellationResult & {
   color?: string;
   highlightFaceIndex?: number | null;
+  highlightEdgeIndex?: number | null;
 }) {
   const { invalidate } = useThree();
 
-  const { body, lines } = useMemo(() => {
+  const { body, lines, highlightLine } = useMemo(() => {
     const nextBody = new BufferGeometry();
     const nextLines = new BufferGeometry();
     if (faces?.vertices?.length) {
@@ -66,17 +74,46 @@ export function ReplicadMesh({
         nextBody.setAttribute("color", new Float32BufferAttribute(colors, 3));
       }
     }
-    return { body: nextBody, lines: nextLines };
-  }, [faces, edges, color, highlightFaceIndex]);
+
+    let nextHighlightLine: BufferGeometry | null = null;
+    if (
+      highlightEdgeIndex != null &&
+      edges?.lines?.length &&
+      highlightEdgeIndex >= 0
+    ) {
+      const start = highlightEdgeIndex * 6;
+      const src = edges.lines;
+      if (start + 5 < src.length) {
+        nextHighlightLine = new BufferGeometry();
+        nextHighlightLine.setAttribute(
+          "position",
+          new Float32BufferAttribute(
+            [
+              src[start],
+              src[start + 1],
+              src[start + 2],
+              src[start + 3],
+              src[start + 4],
+              src[start + 5],
+            ],
+            3,
+          ),
+        );
+      }
+    }
+
+    return { body: nextBody, lines: nextLines, highlightLine: nextHighlightLine };
+  }, [faces, edges, color, highlightFaceIndex, highlightEdgeIndex]);
 
   useEffect(() => {
     invalidate();
     return () => {
       body.dispose();
       lines.dispose();
+      highlightLine?.dispose();
       invalidate();
     };
-  }, [body, lines, invalidate]);
+  }, [body, lines, highlightLine, invalidate]);
 
   const triCount = faces?.triangles?.length ? faces.triangles.length / 3 : 0;
   if (triCount === 0) return null;
@@ -100,6 +137,26 @@ export function ReplicadMesh({
       <lineSegments geometry={lines}>
         <lineBasicMaterial color="#15202b" />
       </lineSegments>
+      {highlightLine ? (
+        <lineSegments geometry={highlightLine} renderOrder={2}>
+          <lineBasicMaterial
+            color={EDGE_HIGHLIGHT_COLOR}
+            depthTest={false}
+            transparent
+            opacity={1}
+          />
+        </lineSegments>
+      ) : null}
+      {highlightLine ? (
+        <lineSegments geometry={highlightLine} renderOrder={1}>
+          <lineBasicMaterial
+            color="#c45c26"
+            depthTest={false}
+            transparent
+            opacity={0.55}
+          />
+        </lineSegments>
+      ) : null}
     </group>
   );
 }

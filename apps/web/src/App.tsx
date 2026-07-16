@@ -4,10 +4,14 @@ import {
   applyParameters,
   createBracketDemo,
   createEmptyFeatureDocument,
+  createRectSketchEntity,
   createReference3UFeatures,
+  ensureSketchEntities,
   newFeatureId,
   parseFeatureDocument,
   serializeFeatureDocument,
+  solveSketch,
+  syncSketchProfileFromEntities,
   type BoxFeature,
   type CadFeature,
   type ChamferFeature,
@@ -28,6 +32,8 @@ import type { MassPropsResult } from "./cad/types";
 import { AnalysisPanel } from "./components/AnalysisPanel";
 import { AssemblyPanel } from "./components/AssemblyPanel";
 import { DrawingPanel } from "./components/DrawingPanel";
+import { ExitCoach } from "./components/ExitCoach";
+import { SketchEditor } from "./components/SketchEditor";
 import { Viewport } from "./components/Viewport";
 import { loadAutosavedDocument, useAutosave } from "./hooks/useAutosave";
 import { useHistory } from "./hooks/useHistory";
@@ -61,6 +67,8 @@ export function App() {
     z: number;
   } | null>(null);
   const [faceIndex, setFaceIndex] = useState<number | null>(null);
+  const [edgeIndex, setEdgeIndex] = useState<number | null>(null);
+  const [edgeLengthMm, setEdgeLengthMm] = useState<number | null>(null);
   const [mesh, setMesh] = useState<TessellationResult | null>(null);
   const [mass, setMass] = useState<MassPropsResult | null>(null);
   const [importPreview, setImportPreview] = useState<TessellationResult | null>(
@@ -82,13 +90,15 @@ export function App() {
 
   const sketchGhost = useMemo(() => {
     if (selectedFeature?.kind !== "sketch") return null;
+    const sk = ensureSketchEntities(selectedFeature);
     return {
-      plane: selectedFeature.plane,
-      profile: selectedFeature.profile,
-      widthMm: selectedFeature.widthMm,
-      heightMm: selectedFeature.heightMm,
-      offsetUMm: selectedFeature.offsetUMm,
-      offsetVMm: selectedFeature.offsetVMm,
+      plane: sk.plane,
+      profile: sk.profile,
+      widthMm: sk.widthMm,
+      heightMm: sk.heightMm,
+      offsetUMm: sk.offsetUMm,
+      offsetVMm: sk.offsetVMm,
+      entities: sk.entities,
     };
   }, [selectedFeature]);
 
@@ -163,6 +173,7 @@ export function App() {
 
   function addSketch() {
     const id = newFeatureId("sk");
+    const rect = createRectSketchEntity(40, 30, 0, 0);
     const feature: SketchFeature = {
       id,
       name: `Sketch ${doc.features.filter((f) => f.kind === "sketch").length + 1}`,
@@ -171,6 +182,7 @@ export function App() {
       profile: "rect",
       widthMm: 40,
       heightMm: 30,
+      entities: [rect],
       constraints: [
         { kind: "horizontal" },
         { kind: "vertical" },
@@ -255,6 +267,7 @@ export function App() {
       name: `Fillet ${doc.features.length + 1}`,
       kind: "fillet",
       radiusMm: 2,
+      edgeIndices: edgeIndex != null ? [edgeIndex] : undefined,
     } satisfies FilletFeature);
   }
 
@@ -265,6 +278,7 @@ export function App() {
       name: `Chamfer ${doc.features.length + 1}`,
       kind: "chamfer",
       distanceMm: 1.5,
+      edgeIndices: edgeIndex != null ? [edgeIndex] : undefined,
     } satisfies ChamferFeature);
   }
 
@@ -568,6 +582,12 @@ export function App() {
 
       {tab === "part" ? (
         <>
+          <ExitCoach
+            doc={doc}
+            onGoAssembly={() => setTab("assembly")}
+            onGoDrawing={() => setTab("drawing")}
+            onDismiss={() => setUxNote("Exit coach dismissed — reopen via Bracket demo tip")}
+          />
           <div className="cad-toolbar" role="toolbar">
             <button type="button" className="tool" disabled={busy} onClick={addSketch}>
               Sketch
@@ -712,10 +732,30 @@ export function App() {
                   setMeasureMm(null);
                   setMeasureBox(null);
                   setFaceIndex(null);
+                  setEdgeIndex(null);
+                  setEdgeLengthMm(null);
                 }}
                 sketchGhost={sketchGhost}
                 faceIndex={faceIndex}
                 onFaceIndex={setFaceIndex}
+                edgeIndex={edgeIndex}
+                onEdgeIndex={(i) => {
+                  setEdgeIndex(i);
+                  if (i == null || !mesh?.edges.lines) {
+                    setEdgeLengthMm(null);
+                    return;
+                  }
+                  const s = i * 6;
+                  const L = mesh.edges.lines;
+                  if (s + 5 >= L.length) {
+                    setEdgeLengthMm(null);
+                    return;
+                  }
+                  const dx = L[s]! - L[s + 3]!;
+                  const dy = L[s + 1]! - L[s + 4]!;
+                  const dz = L[s + 2]! - L[s + 5]!;
+                  setEdgeLengthMm(Math.sqrt(dx * dx + dy * dy + dz * dz));
+                }}
               />
             </section>
 
@@ -723,6 +763,39 @@ export function App() {
               <h2>Properties</h2>
               {faceIndex != null ? (
                 <div className="selection-chip">Face group #{faceIndex}</div>
+              ) : null}
+              {edgeIndex != null ? (
+                <div className="selection-chip">
+                  Edge #{edgeIndex}
+                  {edgeLengthMm != null
+                    ? ` · ${edgeLengthMm.toFixed(2)} mm`
+                    : ""}
+                  {selectedFeature?.kind === "fillet" ||
+                  selectedFeature?.kind === "chamfer" ? (
+                    <button
+                      type="button"
+                      className="linkish"
+                      style={{ marginLeft: 8 }}
+                      onClick={() => {
+                        if (edgeIndex == null || !selectedFeatureId) return;
+                        const prev =
+                          (selectedFeature as FilletFeature | ChamferFeature)
+                            .edgeIndices ?? [];
+                        const next = prev.includes(edgeIndex)
+                          ? prev
+                          : [...prev, edgeIndex];
+                        updateFeature(selectedFeatureId, {
+                          edgeIndices: next,
+                        });
+                        setUxNote(
+                          `Bound edge #${edgeIndex} to ${selectedFeature.kind} (kernel uses global fillet if edge filter unsupported)`,
+                        );
+                      }}
+                    >
+                      Bind to feature
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
               <div className="params-block">
                 <h2>Parameters</h2>
@@ -794,7 +867,12 @@ export function App() {
 
       {tab === "assembly" ? <AssemblyPanel partDoc={doc} /> : null}
       {tab === "drawing" ? (
-        <DrawingPanel partName={doc.name} mesh={displayMesh} />
+        <DrawingPanel
+          partName={doc.name}
+          mesh={displayMesh}
+          parameters={doc.parameters}
+          holeDiaMm={doc.parameters?.holeDia}
+        />
       ) : null}
       {tab === "analysis" ? <AnalysisPanel /> : null}
     </div>
@@ -890,17 +968,18 @@ function FeatureProps({
               onChange={(v) => onChange({ depthMm: v })}
             />
           ) : null}
-          {feature.kind === "sketch" && feature.constraints?.length ? (
-            <div className="selection-chip">
-              Constraints:{" "}
-              {feature.constraints
-                .map((c) =>
-                  c.kind === "dimension"
-                    ? `${c.label ?? "dim"}=${c.valueMm}`
-                    : c.kind,
-                )
-                .join(", ")}
-            </div>
+          {feature.kind === "sketch" ? (
+            <SketchEditor
+              sketch={feature}
+              onChange={(patch) => {
+                const merged = { ...feature, ...patch } as SketchFeature;
+                onChange(
+                  solveSketch(
+                    syncSketchProfileFromEntities(ensureSketchEntities(merged)),
+                  ),
+                );
+              }}
+            />
           ) : null}
         </>
       ) : null}
@@ -929,18 +1008,34 @@ function FeatureProps({
         </>
       ) : null}
       {feature.kind === "fillet" ? (
-        <Num
-          label="Radius"
-          value={feature.radiusMm}
-          onChange={(v) => onChange({ radiusMm: v })}
-        />
+        <>
+          <Num
+            label="Radius"
+            value={feature.radiusMm}
+            onChange={(v) => onChange({ radiusMm: v })}
+          />
+          {feature.edgeIndices?.length ? (
+            <div className="selection-chip">
+              Edges: {feature.edgeIndices.join(", ")}
+            </div>
+          ) : (
+            <p className="hint">Shift+click an edge, then Bind or add Fillet.</p>
+          )}
+        </>
       ) : null}
       {feature.kind === "chamfer" ? (
-        <Num
-          label="Dist"
-          value={feature.distanceMm}
-          onChange={(v) => onChange({ distanceMm: v })}
-        />
+        <>
+          <Num
+            label="Dist"
+            value={feature.distanceMm}
+            onChange={(v) => onChange({ distanceMm: v })}
+          />
+          {feature.edgeIndices?.length ? (
+            <div className="selection-chip">
+              Edges: {feature.edgeIndices.join(", ")}
+            </div>
+          ) : null}
+        </>
       ) : null}
       {feature.kind === "revolve" ? (
         <Num

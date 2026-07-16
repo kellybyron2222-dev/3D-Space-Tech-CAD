@@ -576,3 +576,152 @@ button.tool.active {
     display: none;
   }
 }
+
+/* Sketch editor (props panel) */
+.sketch-editor {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.sketch-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.4rem;
+}
+
+.sketch-editor-toolbar button.tool {
+  min-width: auto;
+  font-size: 0.72rem;
+  padding: 0.22rem 0.38rem;
+}
+
+.sketch-init-btn {
+  width: 100%;
+  font-size: 0.78rem;
+  margin-bottom: 0.35rem;
+}
+
+.sketch-entities {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.sketch-entity {
+  border: 1px solid var(--line);
+  padding: 0.35rem 0.4rem;
+  background: #fff;
+}
+
+.sketch-entity-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.2rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.sketch-entity .props-fields {
+  gap: 0.3rem;
+}
+
+.sketch-entity .field {
+  grid-template-columns: 2rem 1fr;
+  font-size: 0.78rem;
+}
+
+.sketch-constraints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+}
+
+.sketch-constraints .selection-chip {
+  margin-top: 0;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.4rem;
+}
+
+.exit-coach {
+  align-items: flex-start;
+  padding: 0.5rem 0.75rem;
+}
+
+.exit-coach-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.exit-coach-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+}
+
+.exit-coach-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.exit-coach-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.exit-coach-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.82rem;
+}
+
+.exit-coach-item--done .exit-coach-label {
+  color: var(--pass);
+}
+
+.exit-coach-item--tip .exit-coach-label {
+  color: var(--muted);
+}
+
+.exit-coach-marker {
+  width: 1rem;
+  text-align: center;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.exit-coach-item--done .exit-coach-marker {
+  color: var(--pass);
+}
+
+.exit-coach-label {
+  min-width: 6.5rem;
+}
+
+.exit-coach-action {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.78rem;
+}
+
+.exit-coach-item .selection-chip {
+  margin-top: 0;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.4rem;
+}
+
+.exit-coach-dismiss {
+  flex-shrink: 0;
+  align-self: flex-start;
+}
