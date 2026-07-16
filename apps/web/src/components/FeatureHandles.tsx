@@ -17,6 +17,10 @@ type HandleKind =
 
 const HANDLE_RADIUS = 2.8;
 
+function snapMm(v: number): number {
+  return Math.round(v * 2) / 2;
+}
+
 function featureOriginOnPlane(
   plane: PlaneId,
   offsetUMm: number,
@@ -125,8 +129,8 @@ function BoxHandles({
         onDragState={onDragState}
         onDrag={(delta) => {
           onPatch({
-            xMm: x + delta.x,
-            yMm: y + delta.y,
+            xMm: snapMm(x + delta.x),
+            yMm: snapMm(y + delta.y),
           });
         }}
       />
@@ -138,7 +142,7 @@ function BoxHandles({
         axis="x"
         onDragState={onDragState}
         onDrag={(delta) => {
-          onPatch({ widthMm: Math.max(1, w + delta.x * 2) });
+          onPatch({ widthMm: snapMm(Math.max(1, w + delta.x * 2)) });
         }}
       />
       <DragHandle
@@ -150,7 +154,7 @@ function BoxHandles({
         axis="y"
         onDragState={onDragState}
         onDrag={(delta) => {
-          onPatch({ depthMm: Math.max(1, d + delta.y * 2) });
+          onPatch({ depthMm: snapMm(Math.max(1, d + delta.y * 2)) });
         }}
       />
       <DragHandle
@@ -162,7 +166,7 @@ function BoxHandles({
         axis="z"
         onDragState={onDragState}
         onDrag={(delta) => {
-          onPatch({ heightMm: Math.max(0.5, h + delta.z) });
+          onPatch({ heightMm: snapMm(Math.max(0.5, h + delta.z)) });
         }}
       />
     </group>
@@ -194,8 +198,8 @@ function HoleHandles({
         onDragState={onDragState}
         onDrag={(delta) => {
           onPatch({
-            xMm: x + delta.x,
-            yMm: y + delta.y,
+            xMm: snapMm(x + delta.x),
+            yMm: snapMm(y + delta.y),
           });
         }}
       />
@@ -207,7 +211,7 @@ function HoleHandles({
         axis="x"
         onDragState={onDragState}
         onDrag={(delta) => {
-          onPatch({ diameterMm: Math.max(0.5, dia + delta.x * 2) });
+          onPatch({ diameterMm: snapMm(Math.max(0.5, dia + delta.x * 2)) });
         }}
       />
     </group>
@@ -244,7 +248,7 @@ function ExtrudeHandles({
         onDrag={(delta) => {
           const deltaDepth =
             axis === "x" ? delta.x : axis === "y" ? delta.y : delta.z;
-          onPatch({ depthMm: Math.max(0.5, depth + deltaDepth) });
+          onPatch({ depthMm: snapMm(Math.max(0.5, depth + deltaDepth)) });
         }}
       />
     </group>
@@ -284,7 +288,7 @@ function RevolveHandles({
       onDragState={onDragState}
       onDrag={(delta) => {
         const deltaRad = axis === "x" ? delta.x : delta.y;
-        onPatch({ widthMm: Math.max(1, dia + deltaRad * 2) });
+        onPatch({ widthMm: snapMm(Math.max(1, dia + deltaRad * 2)) });
       }}
     />
   );

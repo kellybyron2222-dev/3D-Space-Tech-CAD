@@ -333,6 +333,11 @@ button.tool.active {
   overflow: hidden;
 }
 
+.tool-cursor-crosshair,
+.tool-cursor-crosshair canvas {
+  cursor: crosshair;
+}
+
 .viewport-canvas canvas {
   width: 100% !important;
   height: 100% !important;

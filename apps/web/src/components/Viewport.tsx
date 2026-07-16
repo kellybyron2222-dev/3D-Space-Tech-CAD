@@ -585,7 +585,9 @@ export function Viewport({
           : null;
 
   return (
-    <div className="viewport-canvas cad-viewport">
+    <div
+      className={`viewport-canvas cad-viewport${toolHint ? " tool-cursor-crosshair" : ""}`}
+    >
       <div
         className={`viewport-hud${placingSketch || toolHint ? " viewport-hud--placing" : ""}`}
       >

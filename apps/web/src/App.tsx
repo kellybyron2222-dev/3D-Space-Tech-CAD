@@ -92,6 +92,8 @@ type ActiveTool =
   | "chamfer"
   | "extrude"
   | "revolve"
+  | "mirror"
+  | "linearPattern"
   | "select";
 
 const ACTIVE_TOOL_HINTS: Record<
@@ -108,6 +110,10 @@ const ACTIVE_TOOL_HINTS: Record<
     "Extrude tool: click the solid or press Enter to extrude from current sketch",
   revolve:
     "Revolve tool: click the solid or press Enter to place a revolve",
+  mirror:
+    "Mirror tool: click body or Enter to mirror across right plane",
+  linearPattern:
+    "Pattern tool: click body or Enter to add linear pattern",
 };
 
 function isEditableFeature(f: CadFeature | null): f is CadFeature {
@@ -463,6 +469,12 @@ export function App() {
       case "revolve":
         addRevolve();
         break;
+      case "mirror":
+        addMirror();
+        break;
+      case "linearPattern":
+        addLinearPattern();
+        break;
       default:
         return;
     }
@@ -475,7 +487,9 @@ export function App() {
     activeTool === "fillet" ||
     activeTool === "chamfer" ||
     activeTool === "extrude" ||
-    activeTool === "revolve";
+    activeTool === "revolve" ||
+    activeTool === "mirror" ||
+    activeTool === "linearPattern";
 
   function addRevolve() {
     const id = newFeatureId("rev");
@@ -1018,14 +1032,21 @@ export function App() {
             >
               Chamfer
             </button>
-            <button type="button" className="tool" disabled={busy} onClick={addMirror}>
+            <button
+              type="button"
+              className={activeTool === "mirror" ? "tool active" : "tool"}
+              disabled={busy}
+              onClick={() => toggleActiveTool("mirror")}
+            >
               Mirror
             </button>
             <button
               type="button"
-              className="tool"
+              className={
+                activeTool === "linearPattern" ? "tool active" : "tool"
+              }
               disabled={busy}
-              onClick={addLinearPattern}
+              onClick={() => toggleActiveTool("linearPattern")}
             >
               Pattern
             </button>
