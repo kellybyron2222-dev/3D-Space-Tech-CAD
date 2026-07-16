@@ -148,3 +148,9 @@ Treated as wrong product shape. Analysis lives under **Analysis** tab.
 - Ghost + HUD show live Ø while sizing; orbit disabled during the drag
 
 **Sim feedback:** "Drag-to-size is the first moment that feels closer to TinkerCAD than a form fill-in."
+
+### Loop N ? Fillet/chamfer edge pick
+- Fillet/Chamfer tools: hover highlights nearest edge; click places (Shift optional)
+- Fixed double-add when edge pick also fired the generic tool place path
+
+**Sim feedback:** "Hovering the edge I want before clicking makes fillet feel pickable, not random."

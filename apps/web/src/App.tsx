@@ -106,8 +106,8 @@ const ACTIVE_TOOL_HINTS: Record<
 > = {
   cut: "Cut tool: click or drag to size where to cut (or Enter) · Esc cancels",
   hole: "Hole tool: click or drag to size where to drill (or Enter) · Esc cancels",
-  fillet: "Fillet tool: Shift+click nearest edge (or Enter) · Esc cancels",
-  chamfer: "Chamfer tool: Shift+click nearest edge (or Enter) · Esc cancels",
+  fillet: "Fillet tool: click nearest edge (hover highlights) · Esc cancels",
+  chamfer: "Chamfer tool: click nearest edge (hover highlights) · Esc cancels",
   extrude:
     "Extrude tool: click solid or Enter to extrude current sketch · Esc cancels",
   revolve: "Revolve tool: click solid or Enter to place · Esc cancels",
@@ -824,8 +824,13 @@ export function App() {
     },
   ) {
     const placingFeature = isPlacementTool;
-    if (placingFeature) {
-      applyActiveTool(opts?.point, opts?.sizeMm);
+    // Edge picks (fillet/chamfer) are handled in onEdgeIndex — avoid double-add
+    if (placingFeature && !opts?.edgeSelect) {
+      if (activeTool === "fillet" || activeTool === "chamfer") {
+        // Face click with fillet/chamfer: still need an edge — ignore body-only place
+      } else {
+        applyActiveTool(opts?.point, opts?.sizeMm);
+      }
     }
     const bodyWasSelected = bodySelected;
     setBodySelected(true);
@@ -1278,6 +1283,9 @@ export function App() {
                   activeTool === "hole" || activeTool === "cut"
                     ? activeTool
                     : null
+                }
+                edgePickTool={
+                  activeTool === "fillet" || activeTool === "chamfer"
                 }
                 onClearSelection={() => {
                   setBodySelected(false);

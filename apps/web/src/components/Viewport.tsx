@@ -489,7 +489,9 @@ function SelectableBody({
   onHoverPoint,
   onPlaceSize,
   onPlaceSizing,
+  onHoverEdge,
   placementTool = null,
+  edgePickTool = false,
   selectionEnabled = true,
 }: {
   mesh: TessellationResult;
@@ -516,7 +518,10 @@ function SelectableBody({
   onHoverPoint?: (point: { x: number; y: number; z: number } | null) => void;
   onPlaceSize?: (sizeMm: number | null) => void;
   onPlaceSizing?: (sizing: boolean) => void;
+  onHoverEdge?: (edgeIndex: number | null) => void;
   placementTool?: "hole" | "cut" | null;
+  /** Fillet/chamfer: click picks nearest edge (no Shift required) */
+  edgePickTool?: boolean;
   selectionEnabled?: boolean;
 }) {
   const down = useRef<{
@@ -566,12 +571,17 @@ function SelectableBody({
           onPlaceSize?.(size);
           return;
         }
+        const point = { x: e.point.x, y: e.point.y, z: e.point.z };
+        if (edgePickTool) {
+          onHoverEdge?.(nearestEdgeIndexToPoint(point, mesh.edges.lines));
+        }
         onHoverPoint?.({ x: e.point.x, y: e.point.y, z: e.point.z });
       }}
       onPointerOut={() => {
         if (down.current && placementTool) return;
         onHoverPoint?.(null);
         onPlaceSize?.(null);
+        if (edgePickTool) onHoverEdge?.(null);
       }}
       onPointerUp={(e: ThreeEvent<PointerEvent>) => {
         if (!selectionEnabled || !down.current) return;
@@ -605,7 +615,7 @@ function SelectableBody({
             y: e.point.y,
             z: e.point.z,
           };
-          if (e.shiftKey) {
+          if (e.shiftKey || edgePickTool) {
             const nearest = nearestEdgeIndexToPoint(point, mesh.edges.lines);
             onSelectEdge(nearest, {
               altKey: e.altKey,
@@ -662,6 +672,7 @@ export function Viewport({
   placementCrosshair = false,
   dimensionReadout = null,
   placementTool = null,
+  edgePickTool = false,
 }: {
   mesh: TessellationResult | null;
   status: string;
@@ -688,6 +699,8 @@ export function Viewport({
   dimensionReadout?: string | null;
   /** Active place tool that shows a hover ghost */
   placementTool?: "hole" | "cut" | null;
+  /** Fillet/chamfer: highlight + click nearest edge */
+  edgePickTool?: boolean;
 }) {
   const [handleDragging, setHandleDragging] = useState(false);
   const [placeSizing, setPlaceSizing] = useState(false);
@@ -816,9 +829,11 @@ export function Viewport({
                 edgeIndex={edgeIndex ?? null}
                 selectionEnabled={!placingSketch}
                 placementTool={placementTool}
+                edgePickTool={edgePickTool}
                 onHoverPoint={placementTool ? setHoverPointSnapped : undefined}
                 onPlaceSize={setPlaceSizeMm}
                 onPlaceSizing={setPlaceSizing}
+                onHoverEdge={edgePickTool ? (i) => onEdgeIndex?.(i) : undefined}
                 onSelectFace={(i, opts) => {
                   onSelectBody?.(i, opts);
                 }}
