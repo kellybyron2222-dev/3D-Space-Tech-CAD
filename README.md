@@ -1,14 +1,18 @@
 # Space Tech 3D (SpaceForge)
 
-Open-source **browser space CAD**: parametric 3D modeling (feature history, viewport-first), drafting, and STEP export — with CubeSat/space templates and optional L0 analysis overlays.
+Open-source **browser space CAD**: parametric modeling, assemblies, drawings, and STEP export — with CubeSat templates and optional L0 analysis overlays.
 
-> **Not flight-qualified.** Preliminary design and education. Validate with qualified engineers and professional CAD/CAE before flight.
+> **Preview until table-stakes ship.** Today’s UI is a CAD shell with early features. We are not yet claiming parity with SolidWorks / Onshape / FreeCAD. See [docs/PRODUCT.md](docs/PRODUCT.md).
 
-## Status
+> **Not flight-qualified.** Educational / Phase A use. Validate with qualified engineers and professional CAD/CAE before flight.
 
-**CAD-first rebuild in progress.** Part Studio shell (feature tree, toolbar, dominant viewport), box/extrude features via OCCT Web Worker, Analysis overlay for budgets/CDS. Full sketch editor and production drawings are next.
+## MVP outlook
 
-Repository: [kellybyron2222-dev/3D-Space-Tech-CAD](https://github.com/kellybyron2222-dev/3D-Space-Tech-CAD)
+**Gate (necessary, not sufficient):** constrained sketch, extrude/cut/revolve/fillet/chamfer, face/edge select, feature tree + undo, params, assembly mates lite, associative drawings, STEP I/O, mass props, save/templates.
+
+**Wedge (why pick us):** free + web + self-host, share links, git-diffable design source, space templates + CDS overlay, AI feature-graph edits with rebuild veto.
+
+Full plan: competitive SME synthesis → table-stakes phases in the Cursor plan `MVP CAD Table Stakes`.
 
 ## Quick start
 
@@ -22,27 +26,23 @@ pnpm --filter @spacetech/web dev
 
 Open **http://localhost:5174/**
 
-## Monorepo layout
+## Monorepo
 
 ```text
-apps/web             CAD UI (React) + OCCT worker
+apps/web             CAD UI + OCCT worker
 apps/api             Project API
-packages/sfd-lang    Design document helpers / templates
-packages/budgets     Analysis overlay — mass / power / thermal
-packages/rules-cds   Analysis overlay — CDS-style checkers
-packages/systems     Analysis overlay — VCRM / ICD stubs
-packages/kernel-bridge  Tessellation types
-assets/reference     Open CubeSat STEP + attribution
+packages/sfd-lang    Feature documents + templates
+packages/budgets     Analysis overlay
+packages/rules-cds   CDS-style checkers
+packages/systems     VCRM / ICD stubs (overlay)
+packages/kernel-bridge
+assets/reference     Open CubeSat STEP
 ```
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache-2.0 — [LICENSE](LICENSE), [NOTICE](NOTICE).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) (DCO sign-off required). Read [EXPORT_CONTROL.md](EXPORT_CONTROL.md) and [SECURITY.md](SECURITY.md).
-
-## Product notes
-
-See [docs/PRODUCT.md](docs/PRODUCT.md).
+[CONTRIBUTING.md](CONTRIBUTING.md) (DCO). Read [EXPORT_CONTROL.md](EXPORT_CONTROL.md) and [SECURITY.md](SECURITY.md).

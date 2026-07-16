@@ -2,47 +2,55 @@
 
 **Working name:** SpaceForge (Space Tech 3D on GitHub)
 
-**One-liner:** Browser **space CAD** — design CubeSat and structure geometry with parametric features, produce drawings, export STEP; optional L0 analysis overlays.
+**One-liner:** Open-source browser MCAD for space hardware education and Phase A — Onshape-class core modeling + drawings, CubeSat templates, soft analysis overlays, AI that edits the feature graph (solvers authoritative).
 
-## Product shape
+## Status honesty
 
-SpaceForge is a **CAD application** first:
+Until **table-stakes** ship (sketch, full feature set, selection, assemblies, drawings, STEP), treat the app as a **CAD preview**, not a peer to SolidWorks / Onshape / FreeCAD.
 
-- Dominant 3D viewport
-- Feature tree / history (sketch → extrude / cut / fillet)
-- Context toolbars and property dialogs
-- Drawing tab for 2D views
-- Space-domain templates (1U / 3U chassis, rails)
+Master plan: `.cursor/plans/spacetech_mvp_table_stakes.plan.md` (and competitive canvas).
 
-**Analysis** (mass, power, CDS scorecard, VCRM) is a **secondary overlay** — not the home screen.
+## Necessary but not sufficient (MVP gate)
 
-## In scope (CAD-first MVP)
+Industry SMEs will not call this “real CAD” without:
 
-- Part Studio: feature history, rebuild via OCCT / Replicad Web Worker
-- Sketch → extrude / cut (constraints lite)
-- Face / edge / body selection
-- Drawing views (ortho) + dimension lite
-- STEP import / export (B-rep truth; mesh display only)
-- CubeSat / space templates
-- Analysis overlay: L0 mass / CDS (demoted UI)
+1. Constrained sketch (line/rect/circle + H/V/coincident/parallel + dims)
+2. Extrude / Cut / Revolve / Fillet / Chamfer
+3. Feature tree edit + rollback + undo
+4. Face / edge / body selection + measure
+5. Named parameters
+6. Assembly lite (mates)
+7. Associative 2D drawings (ortho, dims, title block, PDF/SVG)
+8. STEP import/export (FreeCAD-proven) + STL
+9. Mass / volume / CG (L0)
+10. Save / open / templates / autosave
 
-## Out of MVP
+**Exit test:** wall + hole + fillet → 2-part assembly → dimensioned drawing → STEP opens in FreeCAD — without using Analysis.
 
-- CATIA / NX / SolidWorks parity
-- Custom geometry kernel
-- Full ASME / GD&T production drafting
-- LLM agent as primary authoring (post-MVP)
-- Orbital compute / SBSP / lunar modules
-- Multiplayer CRDT, FEM thermal
-- ITAR-certified SaaS claims
+## Differentiator wedge (why us vs desktop)
+
+What ~100 simulated SME interviews said desktop tools under-serve:
+
+- Free + browser + self-host (no seat/VPN tax)
+- Shareable project URL
+- Git-diffable feature/SFD source
+- AI → feature patches with rebuild veto (not chat-as-mesh)
+- CubeSat / space templates + CDS soft overlay
+- Edit/heal imported STEP without remaster
+- Runs on mediocre student laptops
+
+## Explicitly out of MVP
+
+CATIA/NX/Creo parity, full GD&T, CAM, FEM, multiplayer CRDT, SBSP/lunar, flight-qualification claims, analysis-first UI.
 
 ## Principles
 
 1. B-rep (OpenCascade) is geometry truth; mesh is display only
-2. Geometry interaction is the product; forms support features, not the reverse
-3. Honest fidelity labels on any analysis (`L0` / later `L1` / `L2`)
-4. Not flight-qualified — export to professional CAD/CAE for flight work
+2. Table-stakes before differentiators
+3. Geometry interaction is the product; Analysis is an overlay
+4. Deterministic solvers / kernel rebuild are authority over AI
+5. Not flight-qualified
 
-## Roadmap (summary)
+## Roadmap
 
-CAD shell + features → sketch → drafting → space templates → analysis overlay polish → thin AI agent → broader space domains
+Phase A table-stakes core → Phase B assembly + drawings → Phase C space wedge + AI → Phase D ship → post-MVP depth
