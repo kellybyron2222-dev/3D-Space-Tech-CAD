@@ -1253,8 +1253,9 @@ export function App() {
               <p className="tree-hint">
                 Click a face to select — click again to cycle Base/Hole/Extrude
                 (Alt+click cycles). Drag handles to edit. Tools: H hole · C cut ·
-                F fillet · E extrude — then click where to place. Shift+click
-                picks nearest edge. Esc cancels tool first, then selection.
+                F fillet · E extrude — then click where to place. Fillet/chamfer:
+                hover edge, click to pick (Shift optional). Esc cancels tool first,
+                then selection.
               </p>
             </aside>
 
