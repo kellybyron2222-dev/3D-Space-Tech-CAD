@@ -4,6 +4,8 @@ import {
   type FeatureDocument,
 } from "@spacetech/sfd-lang";
 
+export const MAX_SHARE_HASH_LENGTH = 8000;
+
 /** Compact URL hash share for feature documents (no server). */
 export function encodeShareHash(doc: FeatureDocument): string {
   const json = serializeFeatureDocument(doc);
@@ -22,8 +24,10 @@ export function decodeShareHash(hash: string): FeatureDocument | null {
   }
 }
 
-export function copyShareUrl(doc: FeatureDocument): string {
-  const url = `${window.location.origin}${window.location.pathname}${encodeShareHash(doc)}`;
+export function copyShareUrl(doc: FeatureDocument): string | null {
+  const hash = encodeShareHash(doc);
+  if (hash.length > MAX_SHARE_HASH_LENGTH) return null;
+  const url = `${window.location.origin}${window.location.pathname}${hash}`;
   void navigator.clipboard?.writeText(url);
   return url;
 }

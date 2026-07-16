@@ -30,7 +30,7 @@ import {
 } from "@spacetech/sfd-lang";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
 import { getCadApi } from "./cad/client";
-import { copyShareUrl, decodeShareHash, encodeShareHash } from "./cad/shareLink";
+import { copyShareUrl, decodeShareHash } from "./cad/shareLink";
 import {
   getMaterial,
   massKgFromVolume,
@@ -433,6 +433,10 @@ export function App() {
 
       if (tab !== "part") return;
 
+      if (e.key === "End") {
+        history.set((p) => ({ ...p, rollbackIndex: null }));
+        return;
+      }
       if (e.key === "s" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         addSketch();
@@ -477,8 +481,12 @@ export function App() {
   }
 
   function shareLink() {
-    copyShareUrl(doc);
-    window.history.replaceState(null, "", encodeShareHash(doc));
+    const url = copyShareUrl(doc);
+    if (!url) {
+      setUxNote("Part too large for URL share — use Save instead");
+      return;
+    }
+    window.history.replaceState(null, "", new URL(url).hash);
     setUxNote("Share link copied to clipboard");
   }
 
