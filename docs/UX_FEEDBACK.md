@@ -32,6 +32,11 @@ Treated as wrong product shape. Analysis lives under **Analysis** tab.
 
 **Sim feedback:** “Autosave + Share makes it feel like a product. Assembly still crude but mates do something. Sketch constraints are labels only — need a real sketcher.”
 
+### Loop 4 — Pattern + wrap (pre-7:15)
+- Linear pattern + feature reorder already in shell
+- Drawing SVG exports three ortho views
+- All unit tests green; pushed `9f6f9fc` to main
+
 ### Still open (next sessions)
 - Interactive constrained sketch editor
 - Edge-accurate fillet selection
