@@ -1187,14 +1187,24 @@ export function App() {
                 }}
                 onFeatureDrag={(patch) => {
                   if (!selectedFeatureId) return;
-                  studio.replaceDoc((prev) => ({
-                    ...prev,
-                    features: prev.features.map((f) =>
+                  studio.replaceDoc((prev) => {
+                    const features = prev.features.map((f) =>
                       f.id === selectedFeatureId
                         ? ({ ...f, ...patch } as CadFeature)
                         : f,
-                    ),
-                  }));
+                    );
+                    let next: FeatureDocument = { ...prev, features };
+                    const heightMm =
+                      "heightMm" in patch ? patch.heightMm : undefined;
+                    if (
+                      heightMm != null &&
+                      selectedFeatureId === "f-base" &&
+                      prev.parameters?.wall != null
+                    ) {
+                      next = setParameter(next, "wall", heightMm);
+                    }
+                    return next;
+                  });
                 }}
                 onFeatureDragEnd={() => {
                   setDraggingHandles(false);
