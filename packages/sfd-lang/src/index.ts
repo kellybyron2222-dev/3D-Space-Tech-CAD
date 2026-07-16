@@ -376,3 +376,18 @@ export function parseDocument(raw: string): SfdDocument {
   }
   return parsed;
 }
+
+export {
+  activeFeatures,
+  createEmptyFeatureDocument,
+  createReference3UFeatures,
+  newFeatureId,
+  type BoxFeature,
+  type CadFeature,
+  type CutFeature,
+  type ExtrudeFeature,
+  type FeatureDocument,
+  type FeatureKind,
+  type ImportBodyFeature,
+  type PlaneId,
+} from "./features.js";

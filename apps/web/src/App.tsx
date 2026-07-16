@@ -1,224 +1,169 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { saveAs } from "file-saver";
 import {
-  createReference3UDocument,
-  getParam,
-  setPartMass,
-  setPartParam,
-  setPartWatts,
-  type SfdDocument,
-  type SfdPart,
+  createEmptyFeatureDocument,
+  createReference3UFeatures,
+  newFeatureId,
+  type BoxFeature,
+  type CadFeature,
+  type CutFeature,
+  type ExtrudeFeature,
+  type FeatureDocument,
 } from "@spacetech/sfd-lang";
-import type { CdsCheckResult } from "@spacetech/rules-cds";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
-import {
-  createReference3USystemsPack,
-  type EvidenceStatus,
-  type SystemsPack,
-} from "@spacetech/systems";
 import { getCadApi } from "./cad/client";
+import { AnalysisPanel } from "./components/AnalysisPanel";
+import { DrawingStub } from "./components/DrawingStub";
 import { Viewport } from "./components/Viewport";
-import { parseAppProjectFile, toAppProjectFile } from "./projectIO";
-import {
-  buildNextSteps,
-  primaryPowerMargin,
-  suggestPanelHeightMm,
-  tabForCheck,
-  worstCdsStatus,
-  type TabId,
-} from "./ux";
-import {
-  analyzeWorkbook,
-  exportBomCsv,
-  exportCdrHtml,
-  exportCdrMarkdown,
-} from "./workbook";
 
-type SourceMode = "parametric" | "imported";
+type DocTab = "part" | "drawing" | "analysis";
+type ActiveTool = "select" | "box" | "extrude" | "cut";
 
-const REFERENCE_STEP_URL = "/reference/OSCubeSatStruct_Mk5_3U.step";
-const REFERENCE_STEP_NAME = "OSCubeSatStruct Mk5 3U structure";
-const STORAGE_KEY = "spacetech.reference3u.project.v2";
-
-const TABS: { id: TabId; label: string }[] = [
-  { id: "design", label: "Design" },
-  { id: "budgets", label: "Budgets" },
-  { id: "scorecard", label: "Scorecard" },
-  { id: "systems", label: "Systems" },
-  { id: "export", label: "Export" },
-];
-
-function groupParts(parts: SfdPart[]) {
-  const groups = new Map<string, SfdPart[]>();
-  for (const part of parts) {
-    if (part.id === "mission") continue;
-    const key = part.subsystem ?? "other";
-    const list = groups.get(key) ?? [];
-    list.push(part);
-    groups.set(key, list);
-  }
-  return [...groups.entries()];
-}
-
-function setBothPanelHeights(doc: SfdDocument, heightMm: number): SfdDocument {
-  let next = setPartParam(doc, "solar-xp", "heightMm", heightMm);
-  next = setPartParam(next, "solar-xn", "heightMm", heightMm);
-  return next;
+function isEditableFeature(
+  f: CadFeature | null,
+): f is BoxFeature | ExtrudeFeature | CutFeature {
+  return f != null && (f.kind === "box" || f.kind === "extrude" || f.kind === "cut");
 }
 
 export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
-  const projectRef = useRef<HTMLInputElement>(null);
-  const [doc, setDoc] = useState<SfdDocument>(() => createReference3UDocument());
-  const [systems, setSystems] = useState<SystemsPack>(() =>
-    createReference3USystemsPack(),
+  const [doc, setDoc] = useState<FeatureDocument>(() => createReference3UFeatures());
+  const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(
+    "f-chassis",
   );
-  const workbook = useMemo(() => analyzeWorkbook(doc, systems), [doc, systems]);
+  const [bodySelected, setBodySelected] = useState(false);
   const [mesh, setMesh] = useState<TessellationResult | null>(null);
-  const [status, setStatus] = useState("Loading OpenCascade worker…");
+  /** Imported STEP/STL preview until the next feature rebuild */
+  const [importPreview, setImportPreview] = useState<TessellationResult | null>(
+    null,
+  );
+  const [status, setStatus] = useState("Loading kernel…");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<SourceMode>("imported");
-  const [importName, setImportName] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabId>("design");
+  const [tab, setTab] = useState<DocTab>("part");
+  const [tool, setTool] = useState<ActiveTool>("select");
   const [fitNonce, setFitNonce] = useState(0);
-  const [guideOpen, setGuideOpen] = useState(true);
-  const bootstrapped = useRef(false);
+  const rebuildGen = useRef(0);
+  const displayMesh = importPreview ?? mesh;
 
-  const chassis = doc.parts.find((p) => p.id === "chassis");
-  const mission = doc.parts.find((p) => p.id === "mission");
-  const widthMm = chassis ? getParam(chassis, "widthMm", 100) : 100;
-  const depthMm = chassis ? getParam(chassis, "depthMm", 100) : 100;
-  const heightMm = chassis ? getParam(chassis, "heightMm", 340.5) : 340.5;
-  const eclipseFraction = mission
-    ? getParam(mission, "eclipseFraction", 0.35)
-    : 0.35;
-
-  const nextSteps = useMemo(
-    () =>
-      buildNextSteps({
-        scorecard: workbook.scorecard,
-        budgetSummary: workbook.budgetSummary,
-        systems,
-        mode,
-      }),
-    [workbook.scorecard, workbook.budgetSummary, systems, mode],
-  );
-  const powerMargin = primaryPowerMargin(workbook.budgetSummary);
-  const cdsWorst = worstCdsStatus(workbook.scorecard);
-  const suggestedPanelH = useMemo(
-    () =>
-      suggestPanelHeightMm(doc, workbook.budgetSummary.powerByMode.nominal),
-    [doc, workbook.budgetSummary.powerByMode.nominal],
+  const selectedFeature = useMemo(
+    () => doc.features.find((f) => f.id === selectedFeatureId) ?? null,
+    [doc.features, selectedFeatureId],
   );
 
-  const showMesh = useCallback(async (result: TessellationResult, label: string) => {
-    const tris = result.faces.triangles.length / 3;
-    if (!Number.isFinite(tris) || tris <= 0) {
-      throw new Error("Kernel returned an empty mesh");
+  const rebuild = useCallback(async (next: FeatureDocument) => {
+    const gen = ++rebuildGen.current;
+    setBusy(true);
+    setError(null);
+    setStatus("Rebuilding…");
+    try {
+      const cad = getCadApi();
+      await cad.ready();
+      const result = await cad.rebuildFeatures(next);
+      if (gen !== rebuildGen.current) return;
+      const tris = result.faces.triangles.length / 3;
+      if (!Number.isFinite(tris) || tris <= 0) {
+        throw new Error("Empty mesh from rebuild");
+      }
+      setImportPreview(null);
+      setMesh(result);
+      setStatus(`${next.name} · ${Math.round(tris).toLocaleString()} triangles`);
+      setFitNonce((n) => n + 1);
+    } catch (err) {
+      if (gen !== rebuildGen.current) return;
+      setError(err instanceof Error ? err.message : "Rebuild failed");
+      setStatus("Rebuild failed");
+      setMesh(null);
+    } finally {
+      if (gen === rebuildGen.current) setBusy(false);
     }
-    setMesh(result);
-    setStatus(`${label} · ${Math.round(tris).toLocaleString()} triangles`);
-    setFitNonce((n) => n + 1);
   }, []);
 
-  const importFromUrl = useCallback(
-    async (url: string, label: string) => {
-      setBusy(true);
-      setError(null);
-      setStatus(`Loading ${label}…`);
-      try {
-        const cad = getCadApi();
-        await cad.ready();
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Could not fetch ${url} (${res.status})`);
-        const blob = await res.blob();
-        const file = new File(
-          [blob],
-          label.endsWith(".step") ? label : `${label}.step`,
-          { type: "application/step" },
-        );
-        const result = await cad.importModel(file);
-        await showMesh(result, label);
-        setMode("imported");
-        setImportName(label);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Import failed";
-        setError(message);
-        setStatus("Import failed");
-        setMesh(null);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [showMesh],
-  );
-
-  const regenerateParametric = useCallback(
-    async (next: SfdDocument) => {
-      setBusy(true);
-      setError(null);
-      setStatus("Tessellating parametric frame…");
-      try {
-        const cad = getCadApi();
-        await cad.ready();
-        const result = await cad.createMesh(next);
-        await showMesh(result, "Parametric frame");
-        setMode("parametric");
-        setImportName(null);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Kernel error";
-        setError(message);
-        setStatus("Kernel failed — see banner");
-        setMesh(null);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [showMesh],
-  );
-
   useEffect(() => {
-    if (bootstrapped.current) return;
-    bootstrapped.current = true;
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const loaded = parseAppProjectFile(raw);
-        setDoc(loaded.document);
-        setSystems(loaded.systems);
-      }
-    } catch {
-      /* ignore corrupt local draft */
-    }
-    void importFromUrl(REFERENCE_STEP_URL, REFERENCE_STEP_NAME);
-  }, [importFromUrl]);
+    void rebuild(doc);
+  }, [doc, rebuild]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(toAppProjectFile(doc, systems)),
-      );
-    } catch {
-      /* quota / private mode */
-    }
-  }, [doc, systems]);
+  function updateFeature(id: string, patch: Partial<CadFeature>) {
+    setDoc((prev) => ({
+      ...prev,
+      features: prev.features.map((f) =>
+        f.id === id ? ({ ...f, ...patch } as CadFeature) : f,
+      ),
+    }));
+  }
 
-  useEffect(() => {
-    if (mode !== "parametric") return;
-    void regenerateParametric(doc);
-  }, [doc, mode, regenerateParametric]);
+  function addBox() {
+    const id = newFeatureId("box");
+    const feature: BoxFeature = {
+      id,
+      name: `Box ${doc.features.length + 1}`,
+      kind: "box",
+      widthMm: 60,
+      depthMm: 40,
+      heightMm: 20,
+      zMm: 0,
+    };
+    setDoc((prev) => ({ ...prev, features: [...prev.features, feature] }));
+    setSelectedFeatureId(id);
+    setTool("select");
+  }
 
-  async function downloadStep() {
-    if (mode !== "parametric") {
-      setError("Switch to Show parametric frame first, then export STEP.");
-      setTab("export");
-      return;
-    }
+  function addExtrude() {
+    const id = newFeatureId("ext");
+    const feature: ExtrudeFeature = {
+      id,
+      name: `Extrude ${doc.features.length + 1}`,
+      kind: "extrude",
+      plane: "front",
+      widthMm: 50,
+      heightMm: 30,
+      depthMm: 15,
+    };
+    setDoc((prev) => ({ ...prev, features: [...prev.features, feature] }));
+    setSelectedFeatureId(id);
+    setTool("select");
+  }
+
+  function addCut() {
+    const id = newFeatureId("cut");
+    const feature: CutFeature = {
+      id,
+      name: `Cut ${doc.features.length + 1}`,
+      kind: "cut",
+      plane: "front",
+      widthMm: 20,
+      heightMm: 20,
+      depthMm: 80,
+    };
+    setDoc((prev) => ({ ...prev, features: [...prev.features, feature] }));
+    setSelectedFeatureId(id);
+    setTool("select");
+  }
+
+  function suppressSelected() {
+    if (!selectedFeatureId) return;
+    updateFeature(selectedFeatureId, {
+      suppressed: !selectedFeature?.suppressed,
+    });
+  }
+
+  function deleteSelected() {
+    if (!selectedFeatureId) return;
+    setDoc((prev) => ({
+      ...prev,
+      features: prev.features.filter((f) => f.id !== selectedFeatureId),
+    }));
+    setSelectedFeatureId(null);
+  }
+
+  function setRollback(index: number | null) {
+    setDoc((prev) => ({ ...prev, rollbackIndex: index }));
+  }
+
+  async function exportStep() {
     setBusy(true);
     try {
-      const blob = await getCadApi().createStep(doc);
+      const blob = await getCadApi().exportFeaturesStep(doc);
       saveAs(blob, `${doc.name.replace(/\s+/g, "_")}.step`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "STEP export failed");
@@ -231,674 +176,354 @@ export function App() {
     if (!file) return;
     setBusy(true);
     setError(null);
-    setStatus(`Importing ${file.name}…`);
     try {
       const cad = getCadApi();
       await cad.ready();
       const result = await cad.importModel(file);
-      await showMesh(result, file.name);
-      setMode("imported");
-      setImportName(file.name);
+      setImportPreview(result);
+      setFitNonce((n) => n + 1);
+      setBodySelected(true);
+      setStatus(
+        `Imported ${file.name} (preview overlay — Box/Extrude/Cut returns to feature solids)`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
-      setStatus("Import failed");
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
 
-  function saveProject() {
-    const blob = new Blob(
-      [JSON.stringify(toAppProjectFile(doc, systems), null, 2)],
-      { type: "application/json" },
-    );
-    saveAs(blob, `${doc.name.replace(/\s+/g, "_")}.spacetech.json`);
-  }
-
-  async function loadProject(file: File | undefined) {
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const loaded = parseAppProjectFile(text);
-      setDoc(loaded.document);
-      setSystems(loaded.systems);
-      setError(null);
-      setTab("design");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid project file");
-    } finally {
-      if (projectRef.current) projectRef.current.value = "";
-    }
-  }
-
-  function resetWorkbookKeepVisual() {
-    setDoc(createReference3UDocument());
-    setSystems(createReference3USystemsPack());
-    setError(null);
-    if (mode !== "imported") {
-      void importFromUrl(REFERENCE_STEP_URL, REFERENCE_STEP_NAME);
-    }
-  }
-
-  function setVcrmStatus(id: string, statusValue: EvidenceStatus) {
-    setSystems((prev) => ({
-      ...prev,
-      vcrm: prev.vcrm.map((row) =>
-        row.id === id ? { ...row, status: statusValue } : row,
-      ),
-    }));
-  }
-
-  function toggleIcdItem(icdId: string, item: string) {
-    setSystems((prev) => ({
-      ...prev,
-      icds: prev.icds.map((icd) => {
-        if (icd.id !== icdId) return icd;
-        const resolved = new Set(icd.resolvedOpenItems ?? []);
-        if (resolved.has(item)) resolved.delete(item);
-        else resolved.add(item);
-        return { ...icd, resolvedOpenItems: [...resolved] };
-      }),
-    }));
-  }
-
-  function applySuggestedPanelHeight() {
-    if (suggestedPanelH == null) return;
-    setDoc(setBothPanelHeights(doc, suggestedPanelH));
-    setTab("design");
-  }
-
-  function downloadBom() {
-    const csv = exportBomCsv(doc);
-    saveAs(
-      new Blob([csv], { type: "text/csv;charset=utf-8" }),
-      `${doc.name.replace(/\s+/g, "_")}_BOM.csv`,
-    );
-  }
-
-  function downloadCdr() {
-    const md = exportCdrMarkdown(doc, workbook);
-    saveAs(
-      new Blob([md], { type: "text/markdown;charset=utf-8" }),
-      `${doc.name.replace(/\s+/g, "_")}_CDR.md`,
-    );
-  }
-
-  function downloadCdrHtml() {
-    const html = exportCdrHtml(doc, workbook);
-    saveAs(
-      new Blob([html], { type: "text/html;charset=utf-8" }),
-      `${doc.name.replace(/\s+/g, "_")}_CDR.html`,
-    );
-  }
-
-  const { budgetSummary, scorecard, scorecardLine } = workbook;
-  const subsystems = groupParts(doc.parts);
-  const editableBoards = doc.parts.filter(
-    (p) => p.kind === "board" || p.subsystem === "payload",
-  );
-
   return (
-    <main>
-      <header className="app-header">
-        <div>
-          <h1>Space Tech 3D</h1>
-          <p>CubeSat Phase A workbook for university teams.</p>
+    <div className="cad-app">
+      <header className="cad-topbar">
+        <div className="cad-brand">
+          <strong>SpaceForge</strong>
+          <span>Space CAD</span>
         </div>
-        <p className="disclaimer-pill">Not flight-qualified · L0</p>
+        <nav className="doc-tabs" aria-label="Document">
+          <button
+            type="button"
+            className={tab === "part" ? "active" : undefined}
+            onClick={() => setTab("part")}
+          >
+            Part
+          </button>
+          <button
+            type="button"
+            className={tab === "drawing" ? "active" : undefined}
+            onClick={() => setTab("drawing")}
+          >
+            Drawing
+          </button>
+          <button
+            type="button"
+            className={tab === "analysis" ? "active" : undefined}
+            onClick={() => setTab("analysis")}
+          >
+            Analysis
+          </button>
+        </nav>
+        <div className="cad-top-actions">
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => {
+              setDoc(createEmptyFeatureDocument("Part Studio"));
+              setSelectedFeatureId(null);
+            }}
+          >
+            New
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => {
+              const next = createReference3UFeatures();
+              setDoc(next);
+              setSelectedFeatureId(next.features[0]?.id ?? null);
+            }}
+          >
+            3U template
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+          >
+            Import
+          </button>
+          <button type="button" disabled={busy} onClick={() => void exportStep()}>
+            Export STEP
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".step,.stp,.stl"
+            hidden
+            onChange={(e) => void onImportFile(e.target.files?.[0])}
+          />
+        </div>
       </header>
 
-      <div className={`status-strip status-${cdsWorst}`} role="status">
-        <button type="button" className="strip-chip" onClick={() => setTab("budgets")}>
-          <span>Mass</span>
-          <strong>{budgetSummary.totalMassKg.toFixed(2)} kg</strong>
-        </button>
-        <button type="button" className="strip-chip" onClick={() => setTab("design")}>
-          <span>PV (L0)</span>
-          <strong>{budgetSummary.solarGenerationW.toFixed(1)} W</strong>
-        </button>
-        <button
-          type="button"
-          className={`strip-chip margin-${powerMargin?.status ?? "info"}`}
-          onClick={() => setTab("budgets")}
-        >
-          <span>Power margin</span>
-          <strong>{powerMargin?.value ?? "—"}</strong>
-        </button>
-        <button
-          type="button"
-          className={`strip-chip status-${cdsWorst}`}
-          onClick={() => setTab("scorecard")}
-        >
-          <span>CDS</span>
-          <strong>{scorecardLine}</strong>
-        </button>
-      </div>
-
-      {error ? (
-        <div className="banner error-banner" role="alert">
-          <span className="error-text">{error}</span>
-        </div>
-      ) : null}
-
-      <div className="coach">
-        <button
-          type="button"
-          className="coach-toggle"
-          onClick={() => setGuideOpen((v) => !v)}
-        >
-          {guideOpen ? "Hide" : "Show"} guided path
-        </button>
-        {guideOpen ? (
-          <ol className="coach-list">
-            {nextSteps.map((step, i) => (
-              <li key={step.id}>
-                <div className="coach-card">
-                  <button
-                    type="button"
-                    className="coach-step"
-                    onClick={() => setTab(step.tab)}
-                  >
-                    <span className="coach-num">{i + 1}</span>
-                    <span>
-                      <strong>{step.title}</strong>
-                      <span className="citation">{step.detail}</span>
-                    </span>
-                  </button>
-                  {step.id === "power-margin" && suggestedPanelH != null ? (
-                    <button
-                      type="button"
-                      className="coach-apply"
-                      onClick={applySuggestedPanelHeight}
-                    >
-                      Apply panel H {suggestedPanelH} mm
-                    </button>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ol>
-        ) : null}
-      </div>
-
-      <div className="actions">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void importFromUrl(REFERENCE_STEP_URL, REFERENCE_STEP_NAME)}
-        >
-          Load open 3U
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy}
-          onClick={resetWorkbookKeepVisual}
-        >
-          Reset numbers
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy}
-          onClick={() => {
-            setMode("parametric");
-            setDoc(createReference3UDocument());
-          }}
-        >
-          Show parametric frame
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy}
-          onClick={() => fileRef.current?.click()}
-        >
-          Import STEP / STL
-        </button>
-        <button type="button" className="secondary" onClick={saveProject}>
-          Save
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => projectRef.current?.click()}
-        >
-          Open
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".step,.stp,.stl,model/step,model/stl"
-          hidden
-          onChange={(e) => void onImportFile(e.target.files?.[0])}
-        />
-        <input
-          ref={projectRef}
-          type="file"
-          accept=".json,application/json"
-          hidden
-          onChange={(e) => void loadProject(e.target.files?.[0])}
-        />
-      </div>
-
-      <nav className="tabs" aria-label="Workbook sections">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={tab === t.id ? "tab active" : "tab"}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
-
-      {tab === "design" ? (
-        <div className="grid design-grid">
-          <section className="panel viewport-panel">
-            <div className="panel-head">
-              <h2>3D viewport</h2>
-              <span className="badge">
-                {mode === "imported" ? "Open structure" : "Parametric"}
-              </span>
-            </div>
-            <Viewport
-              mesh={mesh}
-              status={status}
-              fitNonce={fitNonce}
-              onFit={() => setFitNonce((n) => n + 1)}
-              envelopeMm={workbook.envelope}
-              showEnvelope
-            />
-            <p className="hint">
-              Dark wire box = CDS envelope from the numbers below. Imported Mk5
-              mesh stays fixed; change envelope to see the ghost resize.
-            </p>
-          </section>
-
-          <section className="panel">
-            <h2>Envelope &amp; solar (live)</h2>
-            <label className="field">
-              <span>Width</span>
-              <input
-                type="number"
-                min={80}
-                max={120}
-                step={0.5}
-                value={widthMm}
-                disabled={busy}
-                onChange={(e) =>
-                  setDoc(setPartParam(doc, "chassis", "widthMm", Number(e.target.value)))
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Depth</span>
-              <input
-                type="number"
-                min={80}
-                max={120}
-                step={0.5}
-                value={depthMm}
-                disabled={busy}
-                onChange={(e) =>
-                  setDoc(setPartParam(doc, "chassis", "depthMm", Number(e.target.value)))
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Height</span>
-              <input
-                type="number"
-                min={100}
-                max={400}
-                step={0.5}
-                value={heightMm}
-                disabled={busy}
-                onChange={(e) =>
-                  setDoc(setPartParam(doc, "chassis", "heightMm", Number(e.target.value)))
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Panel H</span>
-              <input
-                type="number"
-                min={80}
-                max={320}
-                step={1}
-                value={workbook.panelHeightMm}
-                disabled={busy}
-                onChange={(e) =>
-                  setDoc(setBothPanelHeights(doc, Number(e.target.value)))
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Eclipse</span>
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.01}
-                value={eclipseFraction}
-                disabled={busy}
-                onChange={(e) =>
-                  setDoc(
-                    setPartParam(
-                      doc,
-                      "mission",
-                      "eclipseFraction",
-                      Number(e.target.value),
-                    ),
-                  )
-                }
-              />
-            </label>
-            <div className="stat">
-              <span>PV area</span>
-              <span>{workbook.solarAreaM2.toFixed(4)} m²</span>
-            </div>
-            <div className="stat">
-              <span>PV gen (L0)</span>
-              <span>{budgetSummary.solarGenerationW.toFixed(2)} W</span>
-            </div>
+      {tab === "part" ? (
+        <>
+          <div className="cad-toolbar" role="toolbar" aria-label="Features">
             <button
               type="button"
-              className="secondary inline-action"
-              onClick={() => setTab("budgets")}
+              className={tool === "select" ? "tool active" : "tool"}
+              onClick={() => setTool("select")}
             >
-              Edit board loads →
+              Select
             </button>
-          </section>
+            <button
+              type="button"
+              className={tool === "box" ? "tool active" : "tool"}
+              disabled={busy}
+              onClick={() => {
+                setTool("box");
+                addBox();
+              }}
+            >
+              Box
+            </button>
+            <button
+              type="button"
+              className={tool === "extrude" ? "tool active" : "tool"}
+              disabled={busy}
+              onClick={() => {
+                setTool("extrude");
+                addExtrude();
+              }}
+            >
+              Extrude
+            </button>
+            <button
+              type="button"
+              className={tool === "cut" ? "tool active" : "tool"}
+              disabled={busy}
+              onClick={() => {
+                setTool("cut");
+                addCut();
+              }}
+            >
+              Cut
+            </button>
+            <span className="toolbar-sep" />
+            <button
+              type="button"
+              className="tool"
+              disabled={!selectedFeatureId}
+              onClick={suppressSelected}
+            >
+              {selectedFeature?.suppressed ? "Unsuppress" : "Suppress"}
+            </button>
+            <button
+              type="button"
+              className="tool"
+              disabled={!selectedFeatureId}
+              onClick={deleteSelected}
+            >
+              Delete
+            </button>
+            <span className="cad-status">
+              {busy ? "Rebuilding…" : status}
+              {error ? ` · ${error}` : ""}
+            </span>
+          </div>
 
-          <section className="panel span-2">
-            <h2>Subsystems at a glance</h2>
-            <div className="subsystem-row">
-              {subsystems.map(([name, parts]) => (
-                <div className="subsystem" key={name}>
-                  <div className="subsystem-title">{name}</div>
-                  <ul>
-                    {parts.map((p) => (
-                      <li key={p.id}>
-                        <strong>{p.name}</strong>
-                        {p.massKg != null ? ` · ${p.massKg.toFixed(2)} kg` : ""}
-                        {p.wattsNominal != null
-                          ? ` · ${p.wattsNominal.toFixed(1)} W`
-                          : ""}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {tab === "budgets" ? (
-        <div className="grid">
-          <section className="panel">
-            <h2>Mass &amp; power modes</h2>
-            <div className="stat">
-              <span>Total mass</span>
-              <span>{budgetSummary.totalMassKg.toFixed(3)} kg</span>
-            </div>
-            {budgetSummary.cgMm ? (
-              <div className="stat">
-                <span>CG (mm)</span>
-                <span>
-                  {budgetSummary.cgMm.x.toFixed(1)},{" "}
-                  {budgetSummary.cgMm.y.toFixed(1)},{" "}
-                  {budgetSummary.cgMm.z.toFixed(1)}
-                </span>
-              </div>
-            ) : null}
-            <div className="stat">
-              <span>Safe</span>
-              <span>{budgetSummary.powerByMode.safe.toFixed(2)} W</span>
-            </div>
-            <div className="stat">
-              <span>Nominal</span>
-              <span>{budgetSummary.powerByMode.nominal.toFixed(2)} W</span>
-            </div>
-            <div className="stat">
-              <span>Peak</span>
-              <span>{budgetSummary.powerByMode.peak.toFixed(2)} W</span>
-            </div>
-            <div className="stat">
-              <span>Eclipse</span>
-              <span>{budgetSummary.powerByMode.eclipse.toFixed(2)} W</span>
-            </div>
-            <div className="stat">
-              <span>PV generation</span>
-              <span>{budgetSummary.solarGenerationW.toFixed(2)} W</span>
-            </div>
-          </section>
-
-          <section className="panel">
-            <h2>Margins</h2>
-            {budgetSummary.margins.map((m) => (
-              <div className="check" key={m.id}>
-                <div className={`status margin-${m.status}`}>{m.status}</div>
-                <div>
-                  <strong>{m.title}</strong> — {m.value}
-                </div>
-                <div className="citation">{m.message}</div>
-              </div>
-            ))}
-          </section>
-
-          <section className="panel span-2">
-            <h2>Edit board loads (kg / W nominal)</h2>
-            <p className="hint">
-              Raise Panel H on Design if power margin stays red after cutting load.
-            </p>
-            <div className="edit-table">
-              {editableBoards.map((p) => (
-                <div className="edit-row" key={p.id}>
-                  <span className="edit-name">{p.name}</span>
-                  <label>
-                    kg
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={p.massKg ?? 0}
-                      onChange={(e) =>
-                        setDoc(setPartMass(doc, p.id, Number(e.target.value)))
-                      }
-                    />
-                  </label>
-                  <label>
-                    W nom
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.1}
-                      value={p.wattsNominal ?? 0}
-                      onChange={(e) =>
-                        setDoc(
-                          setPartWatts(doc, p.id, {
-                            wattsNominal: Number(e.target.value),
-                          }),
-                        )
-                      }
-                    />
-                  </label>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {tab === "scorecard" ? (
-        <div className="grid">
-          <section className="panel span-2">
-            <h2>CDS + soft constraints · {scorecardLine}</h2>
-            {scorecard.map((check: CdsCheckResult) => (
-              <button
-                type="button"
-                className="check check-button"
-                key={check.id}
-                onClick={() => setTab(tabForCheck(check.id))}
-              >
-                <div className={`status ${check.status}`}>{check.status}</div>
-                <div>
-                  <strong>{check.title}</strong> — {check.message}
-                  <div className="citation">{check.citation}</div>
-                </div>
-              </button>
-            ))}
-            <h2 style={{ marginTop: "1rem" }}>Analysis assumptions</h2>
-            <ul className="assumptions">
-              {budgetSummary.assumptions.map((a) => (
-                <li key={a}>{a}</li>
-              ))}
-            </ul>
-          </section>
-        </div>
-      ) : null}
-
-      {tab === "systems" ? (
-        <div className="grid">
-          <section className="panel">
-            <h2>Assumption registry</h2>
-            <ul className="assumptions">
-              {systems.assumptions.map((a) => (
-                <li key={a.id}>
-                  <span className="badge">{a.fidelity}</span> {a.text}
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section className="panel">
-            <h2>VCRM-lite</h2>
-            {systems.vcrm.map((row) => (
-              <div className="vcrm" key={row.id}>
-                <div className="vcrm-head">
-                  <div className="subsystem-title">{row.id}</div>
-                  <label className="vcrm-status">
-                    Status
-                    <select
-                      value={row.status}
-                      onChange={(e) =>
-                        setVcrmStatus(row.id, e.target.value as EvidenceStatus)
-                      }
-                    >
-                      <option value="planned">planned</option>
-                      <option value="in_progress">in progress</option>
-                      <option value="complete">complete</option>
-                      <option value="waived">waived</option>
-                    </select>
-                  </label>
-                </div>
-                <strong>{row.requirement}</strong>
-                <div className="citation">
-                  Method: {row.method}
-                  <br />
-                  Evidence: {row.evidence}
-                </div>
-              </div>
-            ))}
-          </section>
-          <section className="panel span-2">
-            <h2>ICD stubs</h2>
-            <div className="icd-grid">
-              {systems.icds.map((icd) => (
-                <div className="icd" key={icd.id}>
-                  <div className="subsystem-title">
-                    {icd.domain} · {icd.id}
-                  </div>
-                  <strong>{icd.title}</strong>
-                  <p className="hint">Interface to: {icd.interfaceTo}</p>
-                  <p>{icd.notes}</p>
-                  <ul className="icd-checks">
-                    {icd.openItems.map((item) => {
-                      const done = (icd.resolvedOpenItems ?? []).includes(item);
-                      return (
-                        <li key={item}>
-                          <label className={done ? "done" : undefined}>
-                            <input
-                              type="checkbox"
-                              checked={done}
-                              onChange={() => toggleIcdItem(icd.id, item)}
-                            />
-                            {item}
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {tab === "export" ? (
-        <div className="grid">
-          <section className="panel span-2">
-            <h2>Phase A package</h2>
-            <p className="hint">
-              Download for advisor review. Visual stays on Mk5 unless you switch
-              to parametric for STEP.
-            </p>
-            <div className="actions">
-              <button type="button" onClick={downloadBom}>
-                Export BOM CSV
-              </button>
-              <button type="button" onClick={downloadCdr}>
-                Export CDR Markdown
-              </button>
-              <button type="button" onClick={downloadCdrHtml}>
-                Export CDR HTML (print/PDF)
-              </button>
-              <button type="button" className="secondary" onClick={saveProject}>
-                Save project JSON
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => void downloadStep()}
-              >
-                Export parametric STEP
-              </button>
-            </div>
-            {mode === "imported" ? (
-              <p className="hint">
-                Parametric STEP needs{" "}
+          <div className="cad-workspace">
+            <aside className="feature-tree" aria-label="Feature tree">
+              <div className="tree-head">
+                <span>Features</span>
                 <button
                   type="button"
                   className="linkish"
-                  onClick={() => setMode("parametric")}
+                  onClick={() => setRollback(null)}
                 >
-                  Show parametric frame
-                </button>{" "}
-                first.
+                  End
+                </button>
+              </div>
+              <ul>
+                <li className="tree-datum">Origin</li>
+                <li className="tree-datum">Front / Top / Right</li>
+                {doc.features.map((f, index) => {
+                  const rolled =
+                    doc.rollbackIndex != null && index > doc.rollbackIndex;
+                  return (
+                    <li key={f.id}>
+                      <button
+                        type="button"
+                        className={[
+                          "tree-item",
+                          f.id === selectedFeatureId ? "selected" : "",
+                          f.suppressed ? "suppressed" : "",
+                          rolled ? "rolled" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() => setSelectedFeatureId(f.id)}
+                        onDoubleClick={() => setRollback(index)}
+                      >
+                        <span className="tree-kind">{f.kind}</span>
+                        {f.name}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="tree-hint">
+                Click to select. Double-click to roll back to that feature. End
+                rebuilds all.
               </p>
-            ) : null}
-          </section>
-        </div>
+              {selectedFeatureId ? (
+                <button
+                  type="button"
+                  className="secondary tree-rollback-btn"
+                  onClick={() => {
+                    const idx = doc.features.findIndex(
+                      (f) => f.id === selectedFeatureId,
+                    );
+                    if (idx >= 0) setRollback(idx);
+                  }}
+                >
+                  Rollback to selected
+                </button>
+              ) : null}
+            </aside>
+
+            <section className="cad-viewport-wrap">
+              <Viewport
+                mesh={displayMesh}
+                status={status}
+                fitNonce={fitNonce}
+                onFit={() => setFitNonce((n) => n + 1)}
+                selected={bodySelected}
+                onSelectBody={() => setBodySelected(true)}
+                onClearSelection={() => setBodySelected(false)}
+              />
+            </section>
+
+            <aside className="props-panel" aria-label="Properties">
+              <h2>Properties</h2>
+              {!isEditableFeature(selectedFeature) ? (
+                <p className="hint">
+                  {selectedFeature?.kind === "importBody"
+                    ? "Imported body is display-only until fused into history."
+                    : bodySelected
+                      ? "Body selected. Pick a feature in the tree to edit parameters."
+                      : "Select a feature or add Box / Extrude / Cut."}
+                </p>
+              ) : (
+                <FeatureProps
+                  feature={selectedFeature}
+                  onChange={(patch) => updateFeature(selectedFeature.id, patch)}
+                />
+              )}
+              {bodySelected ? (
+                <div className="selection-chip">Body selected</div>
+              ) : null}
+            </aside>
+          </div>
+        </>
       ) : null}
 
-      <footer>
-        Viewing{" "}
-        {mode === "imported" ? (
-          <code>{importName}</code>
-        ) : (
-          <>
-            parametric · <code>{doc.name}</code>
-          </>
-        )}
-        . Apache-2.0 · EXPORT_CONTROL.md
-      </footer>
-    </main>
+      {tab === "drawing" ? <DrawingStub partName={doc.name} /> : null}
+      {tab === "analysis" ? <AnalysisPanel /> : null}
+    </div>
+  );
+}
+
+function FeatureProps({
+  feature,
+  onChange,
+}: {
+  feature: BoxFeature | ExtrudeFeature | CutFeature;
+  onChange: (patch: Partial<CadFeature>) => void;
+}) {
+  return (
+    <div className="props-fields">
+      <label className="field">
+        <span>Name</span>
+        <input
+          type="text"
+          value={feature.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+        />
+      </label>
+      {feature.kind === "box" ? (
+        <>
+          <label className="field">
+            <span>Width</span>
+            <input
+              type="number"
+              value={feature.widthMm}
+              onChange={(e) => onChange({ widthMm: Number(e.target.value) })}
+            />
+          </label>
+          <label className="field">
+            <span>Depth</span>
+            <input
+              type="number"
+              value={feature.depthMm}
+              onChange={(e) => onChange({ depthMm: Number(e.target.value) })}
+            />
+          </label>
+          <label className="field">
+            <span>Height</span>
+            <input
+              type="number"
+              value={feature.heightMm}
+              onChange={(e) => onChange({ heightMm: Number(e.target.value) })}
+            />
+          </label>
+        </>
+      ) : (
+        <>
+          <label className="field">
+            <span>Plane</span>
+            <select
+              value={feature.plane}
+              onChange={(e) =>
+                onChange({
+                  plane: e.target.value as ExtrudeFeature["plane"],
+                })
+              }
+            >
+              <option value="front">Front (XY)</option>
+              <option value="top">Top (XZ)</option>
+              <option value="right">Right (YZ)</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Width</span>
+            <input
+              type="number"
+              value={feature.widthMm}
+              onChange={(e) => onChange({ widthMm: Number(e.target.value) })}
+            />
+          </label>
+          <label className="field">
+            <span>Height</span>
+            <input
+              type="number"
+              value={feature.heightMm}
+              onChange={(e) => onChange({ heightMm: Number(e.target.value) })}
+            />
+          </label>
+          <label className="field">
+            <span>Depth</span>
+            <input
+              type="number"
+              value={feature.depthMm}
+              onChange={(e) => onChange({ depthMm: Number(e.target.value) })}
+            />
+          </label>
+        </>
+      )}
+    </div>
   );
 }

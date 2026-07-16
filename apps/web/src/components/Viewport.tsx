@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
+import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls as ThreeOrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as THREE from "three";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
@@ -7,7 +7,7 @@ import { ReplicadMesh } from "./ReplicadMesh";
 
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
 
-function OrbitControls() {
+function OrbitControls({ enabled }: { enabled: boolean }) {
   const { camera, gl, invalidate } = useThree();
   const controls = useMemo(
     () => new ThreeOrbitControls(camera, gl.domElement),
@@ -17,13 +17,14 @@ function OrbitControls() {
   useEffect(() => {
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
+    controls.enabled = enabled;
     const onChange = () => invalidate();
     controls.addEventListener("change", onChange);
     return () => {
       controls.removeEventListener("change", onChange);
       controls.dispose();
     };
-  }, [controls, invalidate]);
+  }, [controls, invalidate, enabled]);
 
   useEffect(() => {
     let frame = 0;
@@ -77,53 +78,65 @@ function FitCamera({
 
 function Grid() {
   const helper = useMemo(() => {
-    const g = new THREE.GridHelper(400, 20, "#b9b3a6", "#d9d3c6");
+    const g = new THREE.GridHelper(500, 25, "#9aa3ad", "#c9c2b6");
     g.rotation.x = Math.PI / 2;
     return g;
   }, []);
   return <primitive object={helper} />;
 }
 
-/** Wire CDS envelope so workbook numbers stay visually coupled to the model. */
-function EnvelopeGhost({
-  widthMm,
-  depthMm,
-  heightMm,
-}: {
-  widthMm: number;
-  depthMm: number;
-  heightMm: number;
-}) {
-  const geom = useMemo(
-    () => new THREE.BoxGeometry(widthMm, depthMm, heightMm),
-    [widthMm, depthMm, heightMm],
+function DatumPlanes() {
+  return (
+    <group>
+      {/* Front XY */}
+      <mesh position={[0, 0, 0]} rotation={[0, 0, 0]}>
+        <planeGeometry args={[120, 120]} />
+        <meshBasicMaterial
+          color="#3d6e8c"
+          transparent
+          opacity={0.06}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+    </group>
   );
-  const edges = useMemo(() => new THREE.EdgesGeometry(geom), [geom]);
-  const mat = useMemo(
-    () =>
-      new THREE.LineBasicMaterial({
-        color: "#0b3d5c",
-        transparent: true,
-        opacity: 0.85,
-      }),
-    [],
-  );
+}
 
-  useEffect(
-    () => () => {
-      geom.dispose();
-      edges.dispose();
-      mat.dispose();
-    },
-    [geom, edges, mat],
-  );
+function SelectableBody({
+  mesh,
+  selected,
+  onSelect,
+}: {
+  mesh: TessellationResult;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const down = useRef<{ x: number; y: number } | null>(null);
 
   return (
-    <lineSegments
-      geometry={edges}
-      material={mat}
-      position={[0, 0, heightMm / 2]}
-    />
+    <group
+      onPointerDown={(e: ThreeEvent<PointerEvent>) => {
+        down.current = { x: e.clientX, y: e.clientY };
+        e.stopPropagation();
+      }}
+      onPointerUp={(e: ThreeEvent<PointerEvent>) => {
+        if (!down.current) return;
+        const dx = e.clientX - down.current.x;
+        const dy = e.clientY - down.current.y;
+        down.current = null;
+        if (dx * dx + dy * dy < 16) {
+          e.stopPropagation();
+          onSelect();
+        }
+      }}
+    >
+      <ReplicadMesh
+        faces={mesh.faces}
+        edges={mesh.edges}
+        color={selected ? "#c45c26" : "#5f7d95"}
+      />
+    </group>
   );
 }
 
@@ -132,15 +145,17 @@ export function Viewport({
   status,
   fitNonce = 0,
   onFit,
-  envelopeMm,
-  showEnvelope = true,
+  selected,
+  onSelectBody,
+  onClearSelection,
 }: {
   mesh: TessellationResult | null;
   status: string;
   fitNonce?: number;
   onFit?: () => void;
-  envelopeMm?: { w: number; d: number; h: number };
-  showEnvelope?: boolean;
+  selected?: boolean;
+  onSelectBody?: () => void;
+  onClearSelection?: () => void;
 }) {
   const dpr = Math.min(
     typeof window !== "undefined" ? window.devicePixelRatio : 1,
@@ -151,16 +166,15 @@ export function Viewport({
     : 0;
 
   return (
-    <div className="viewport-canvas">
+    <div className="viewport-canvas cad-viewport">
       <div className="viewport-hud">
-        {mesh ? `${triCount.toLocaleString()} triangles · drag to orbit` : status}
-        {showEnvelope && envelopeMm
-          ? ` · envelope ${envelopeMm.w}×${envelopeMm.d}×${envelopeMm.h} mm`
-          : ""}
+        {mesh
+          ? `${triCount.toLocaleString()} tris · click body to select · drag orbit`
+          : status}
       </div>
       {mesh && onFit ? (
         <button type="button" className="viewport-fit" onClick={onFit}>
-          Fit view
+          Fit
         </button>
       ) : null}
       {!mesh ? <div className="viewport-overlay">{status}</div> : null}
@@ -170,27 +184,26 @@ export function Viewport({
         camera={{ position: [280, -280, 200], fov: 35, near: 0.1, far: 8000 }}
         gl={{ antialias: true, alpha: false }}
         onCreated={({ gl }) => {
-          gl.setClearColor("#ebe6dc");
+          gl.setClearColor("#dfe4e8");
         }}
+        onPointerMissed={() => onClearSelection?.()}
       >
-        <ambientLight intensity={0.75} />
-        <directionalLight position={[240, -160, 320]} intensity={1.05} />
-        <directionalLight position={[-180, 120, 80]} intensity={0.35} />
+        <ambientLight intensity={0.7} />
+        <directionalLight position={[240, -160, 320]} intensity={1.1} />
+        <directionalLight position={[-180, 120, 80]} intensity={0.4} />
         <Grid />
+        <DatumPlanes />
         {mesh ? (
           <>
-            <ReplicadMesh faces={mesh.faces} edges={mesh.edges} />
+            <SelectableBody
+              mesh={mesh}
+              selected={Boolean(selected)}
+              onSelect={() => onSelectBody?.()}
+            />
             <FitCamera mesh={mesh} fitNonce={fitNonce} />
           </>
         ) : null}
-        {showEnvelope && envelopeMm ? (
-          <EnvelopeGhost
-            widthMm={envelopeMm.w}
-            depthMm={envelopeMm.d}
-            heightMm={envelopeMm.h}
-          />
-        ) : null}
-        <OrbitControls />
+        <OrbitControls enabled />
       </Canvas>
     </div>
   );

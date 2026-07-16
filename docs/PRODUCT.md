@@ -2,35 +2,47 @@
 
 **Working name:** SpaceForge (Space Tech 3D on GitHub)
 
-**One-liner:** Open-source CubeSat Phase A systems workbook with real geometry and CDS-aware budgets — AI optional, physics authoritative, university-first.
+**One-liner:** Browser **space CAD** — design CubeSat and structure geometry with parametric features, produce drawings, export STEP; optional L0 analysis overlays.
 
-## MVP (in scope)
+## Product shape
 
-- Browser app + parametric **Reference-3U** template (LibreCube-tagged)
-- Default open-hardware **OSCubeSatStruct Mk5** STEP visual
-- **OCCT / Replicad Web Worker** (B-rep truth, mesh display)
-- Mass / CG and **mode-based** power budgets + **L0 thermal** + PV generation from panel area
-- CDS-style scorecard (envelope, mass, CG, deployer keep-out, soft power)
-- **VCRM-lite** + **ICD stubs** + assumption registry
-- Export STEP (parametric), **BOM CSV**, **CDR Markdown**, project JSON
-- FreeCAD STEP roundtrip; PWA (next)
-- Physics-informed + soft-constrained (deterministic solvers are authority)
+SpaceForge is a **CAD application** first:
+
+- Dominant 3D viewport
+- Feature tree / history (sketch → extrude / cut / fillet)
+- Context toolbars and property dialogs
+- Drawing tab for 2D views
+- Space-domain templates (1U / 3U chassis, rails)
+
+**Analysis** (mass, power, CDS scorecard, VCRM) is a **secondary overlay** — not the home screen.
+
+## In scope (CAD-first MVP)
+
+- Part Studio: feature history, rebuild via OCCT / Replicad Web Worker
+- Sketch → extrude / cut (constraints lite)
+- Face / edge / body selection
+- Drawing views (ortho) + dimension lite
+- STEP import / export (B-rep truth; mesh display only)
+- CubeSat / space templates
+- Analysis overlay: L0 mass / CDS (demoted UI)
 
 ## Out of MVP
 
-- LLM agent (post-MVP)
+- CATIA / NX / SolidWorks parity
+- Custom geometry kernel
+- Full ASME / GD&T production drafting
+- LLM agent as primary authoring (post-MVP)
 - Orbital compute / SBSP / lunar modules
-- Multiplayer CRDT, FEM thermal, ASME production drafting
-- Custom geometry kernel or mesh-as-truth
+- Multiplayer CRDT, FEM thermal
 - ITAR-certified SaaS claims
 
 ## Principles
 
 1. B-rep (OpenCascade) is geometry truth; mesh is display only
-2. Budgets stay bound to geometry parameters (panel area → PV watts)
-3. Honest fidelity labels (`L0` / later `L1` / `L2`)
-4. Not flight-qualified — engineers refine and export to professional CAD/CAE
+2. Geometry interaction is the product; forms support features, not the reverse
+3. Honest fidelity labels on any analysis (`L0` / later `L1` / `L2`)
+4. Not flight-qualified — export to professional CAD/CAE for flight work
 
 ## Roadmap (summary)
 
-MVP → thin AI agent → Orekit/org catalogs → orbital compute kit → FEM / SBSP / lunar
+CAD shell + features → sketch → drafting → space templates → analysis overlay polish → thin AI agent → broader space domains

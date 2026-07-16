@@ -1,4 +1,4 @@
-import type { SfdDocument } from "@spacetech/sfd-lang";
+import type { SfdDocument, FeatureDocument } from "@spacetech/sfd-lang";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
 
 export type CadWorkerApi = {
@@ -7,4 +7,6 @@ export type CadWorkerApi = {
   createStep(doc: SfdDocument): Promise<Blob>;
   createStl(doc: SfdDocument): Promise<Blob>;
   importModel(file: File): Promise<TessellationResult>;
+  rebuildFeatures(doc: FeatureDocument): Promise<TessellationResult>;
+  exportFeaturesStep(doc: FeatureDocument): Promise<Blob>;
 };

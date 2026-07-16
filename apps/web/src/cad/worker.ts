@@ -8,9 +8,10 @@ import {
 } from "replicad";
 import opencascade from "replicad-opencascadejs/src/replicad_single.js";
 import opencascadeWasm from "replicad-opencascadejs/src/replicad_single.wasm?url";
-import type { SfdDocument } from "@spacetech/sfd-lang";
+import type { FeatureDocument, SfdDocument } from "@spacetech/sfd-lang";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
 import { buildShapeFromSfd } from "./buildFromSfd";
+import { buildShapeFromFeatures } from "./buildFromFeatures";
 
 let loaded = false;
 
@@ -28,7 +29,6 @@ const started = initOc();
 function toPlainMesh(shape: Shape3D): TessellationResult {
   const faces = shape.mesh({ tolerance: 0.15, angularTolerance: 0.6 });
   const edges = shape.meshEdges({ tolerance: 0.15, angularTolerance: 0.6 });
-  // Plain arrays survive Comlink structured clone reliably
   return {
     faces: {
       vertices: Array.from(faces.vertices),
@@ -64,6 +64,16 @@ const api = {
       tolerance: 0.15,
       angularTolerance: 0.6,
     });
+  },
+
+  async rebuildFeatures(doc: FeatureDocument): Promise<TessellationResult> {
+    await started;
+    return toPlainMesh(buildShapeFromFeatures(doc));
+  },
+
+  async exportFeaturesStep(doc: FeatureDocument): Promise<Blob> {
+    await started;
+    return buildShapeFromFeatures(doc).blobSTEP();
   },
 
   async importModel(file: File): Promise<TessellationResult> {
