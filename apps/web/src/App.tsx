@@ -96,6 +96,12 @@ export function App() {
     [doc.features, selectedFeatureId],
   );
 
+  useEffect(() => {
+    if (selectedFeature?.kind !== "sketch") {
+      setSketchPlaceMode(null);
+    }
+  }, [selectedFeature?.kind]);
+
   const sketchGhost = useMemo(() => {
     if (selectedFeature?.kind !== "sketch") return null;
     const sk = ensureSketchEntities(selectedFeature);
@@ -722,8 +728,8 @@ export function App() {
                 })}
               </ul>
               <p className="tree-hint">
-                Sketch → Extrude for profiles. Double-click = rollback. Ctrl+Z
-                undo.
+                Sketch → place/edit → Extrude. Click face · Shift+click edge.
+                Double-click = rollback · Ctrl+Z undo.
               </p>
             </aside>
 

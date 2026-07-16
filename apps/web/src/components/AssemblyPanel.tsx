@@ -62,7 +62,11 @@ function assemblyFromPart(part: FeatureDocument): AssemblyDocument {
   };
 }
 
-/** Assembly lite — place instances; distance mates drive Z offset. */
+function partStudioKey(part: FeatureDocument): string {
+  return `${part.name}|${part.features.length}`;
+}
+
+/** Assembly lite — place instances; mates drive relative placement. */
 export function AssemblyPanel({ partDoc }: { partDoc?: FeatureDocument }) {
   const seed = useMemo(
     () => (partDoc ? assemblyFromPart(partDoc) : createDemoAssembly()),
@@ -71,10 +75,18 @@ export function AssemblyPanel({ partDoc }: { partDoc?: FeatureDocument }) {
     [],
   );
   const [asm, setAsm] = useState<AssemblyDocument>(seed);
+  const [syncedPartKey, setSyncedPartKey] = useState<string | null>(
+    partDoc ? partStudioKey(partDoc) : null,
+  );
   const [mesh, setMesh] = useState<TessellationResult | null>(null);
   const [status, setStatus] = useState("Building assembly…");
   const [fitNonce, setFitNonce] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  const partStudioStale =
+    partDoc != null &&
+    syncedPartKey != null &&
+    partStudioKey(partDoc) !== syncedPartKey;
 
   const rebuild = useCallback(async (doc: AssemblyDocument) => {
     setStatus("Rebuilding assembly…");
@@ -147,9 +159,52 @@ export function AssemblyPanel({ partDoc }: { partDoc?: FeatureDocument }) {
   function syncFromPart() {
     if (!partDoc) {
       setAsm(createDemoAssembly());
+      setSyncedPartKey(null);
       return;
     }
     setAsm(assemblyFromPart(partDoc));
+    setSyncedPartKey(partStudioKey(partDoc));
+  }
+
+  function addCoincidentMate() {
+    setAsm((prev) => {
+      if (prev.instances.length < 2) return prev;
+      const partA = prev.instances[0]!.id;
+      const partB = prev.instances[1]!.id;
+      return {
+        ...prev,
+        mates: [
+          ...prev.mates,
+          {
+            id: newFeatureId("mate"),
+            kind: "coincident",
+            partA,
+            partB,
+          },
+        ],
+      };
+    });
+  }
+
+  function addDistanceMate() {
+    setAsm((prev) => {
+      if (prev.instances.length < 2) return prev;
+      const partA = prev.instances[0]!.id;
+      const partB = prev.instances[1]!.id;
+      return {
+        ...prev,
+        mates: [
+          ...prev.mates,
+          {
+            id: newFeatureId("mate"),
+            kind: "distance",
+            partA,
+            partB,
+            distanceMm: 10,
+          },
+        ],
+      };
+    });
   }
 
   function addPostInstance() {
@@ -184,7 +239,17 @@ export function AssemblyPanel({ partDoc }: { partDoc?: FeatureDocument }) {
   }
 
   return (
-    <div className="assembly-layout">
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+      {partStudioStale ? (
+        <div
+          className="ux-banner"
+          role="status"
+          style={{ fontSize: "0.8rem", padding: "0.25rem 0.75rem", flexShrink: 0 }}
+        >
+          Part Studio updated — click Use Part Studio to refresh
+        </div>
+      ) : null}
+      <div className="assembly-layout" style={{ flex: 1, minHeight: 0 }}>
       <aside className="feature-tree">
         <div className="tree-head">
           <span>Instances</span>
@@ -256,6 +321,24 @@ export function AssemblyPanel({ partDoc }: { partDoc?: FeatureDocument }) {
             </li>
           ))}
         </ul>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", marginTop: "0.35rem" }}>
+          <button
+            type="button"
+            className="secondary"
+            disabled={asm.instances.length < 2}
+            onClick={addCoincidentMate}
+          >
+            Add coincident mate
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={asm.instances.length < 2}
+            onClick={addDistanceMate}
+          >
+            Add distance mate
+          </button>
+        </div>
         <button
           type="button"
           className="secondary"
@@ -272,8 +355,9 @@ export function AssemblyPanel({ partDoc }: { partDoc?: FeatureDocument }) {
           Save assembly
         </button>
         <p className="tree-hint">
-          Distance mates set partB Z = partA Z + dist. Use Part Studio pulls
-          current part as base ({partDoc?.name ?? createBracketDemo().name}).
+          Coincident mates align partB to partA XYZ. Distance mates set partB Z
+          = partA Z + dist. Use Part Studio pulls current part as base (
+          {partDoc?.name ?? createBracketDemo().name}).
         </p>
         {error ? <p className="error-text">{error}</p> : null}
       </aside>
@@ -285,6 +369,7 @@ export function AssemblyPanel({ partDoc }: { partDoc?: FeatureDocument }) {
           onFit={() => setFitNonce((n) => n + 1)}
         />
       </section>
+    </div>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 # Space Tech 3D (SpaceForge)
 
-Open-source **browser space CAD**: parametric modeling, assemblies, drawings, and STEP export — with CubeSat templates and optional L0 analysis overlays.
+Open-source **browser space CAD**: parametric Part Studio (multi-entity sketches, extrude/cut/revolve/fillet/chamfer, assemblies lite, drawing SVG, STEP/STL, mass props) — CubeSat templates and optional L0 analysis overlays.
 
-> **Preview until table-stakes ship.** Today’s UI is a CAD shell with early features. We are not yet claiming parity with SolidWorks / Onshape / FreeCAD. See [docs/PRODUCT.md](docs/PRODUCT.md).
+> **Preview until table-stakes ship.** Sketch place + editor, H/V/dim solve lite, core feature ops, STEP/STL I/O, mass props, and an exit-test coach are in; full constrained sketch and true mates are not. Not parity with SolidWorks / Onshape / FreeCAD. See [docs/PRODUCT.md](docs/PRODUCT.md).
 
 > **Not flight-qualified.** Educational / Phase A use. Validate with qualified engineers and professional CAD/CAE before flight.
 

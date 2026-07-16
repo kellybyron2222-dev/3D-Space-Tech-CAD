@@ -14,6 +14,7 @@ import {
   type FeatureDocument,
   type PlaneId,
   type ProfileKind,
+  type SketchEntity,
 } from "@spacetech/sfd-lang";
 
 /** Replicad fillet/chamfer edge filter: `(e) => e.inPlane(...)` etc. */
@@ -136,6 +137,62 @@ function profileSolid(
   );
 }
 
+function solidsFromSketchEntities(
+  plane: PlaneId,
+  entities: SketchEntity[],
+  depthMm: number,
+): Shape3D[] {
+  const solids: Shape3D[] = [];
+  for (const entity of entities) {
+    if (entity.kind === "rect") {
+      solids.push(
+        profileSolid(
+          plane,
+          "rect",
+          entity.widthMm,
+          entity.heightMm,
+          depthMm,
+          entity.x + entity.widthMm / 2,
+          entity.y + entity.heightMm / 2,
+        ),
+      );
+    } else if (entity.kind === "circle") {
+      solids.push(
+        profileSolid(
+          plane,
+          "circle",
+          entity.diameterMm,
+          entity.diameterMm,
+          depthMm,
+          entity.cx,
+          entity.cy,
+        ),
+      );
+    }
+  }
+  return solids;
+}
+
+function fuseSolids(solids: Shape3D[]): Shape3D {
+  let combined = solids[0];
+  for (let i = 1; i < solids.length; i++) {
+    combined = combined.fuse(solids[i]);
+  }
+  return combined;
+}
+
+function cutSolids(current: Shape3D, solids: Shape3D[]): Shape3D {
+  let result = current;
+  for (const solid of solids) {
+    try {
+      result = result.cut(solid);
+    } catch {
+      // keep previous result
+    }
+  }
+  return result;
+}
+
 function applyFeature(
   current: Shape3D | null,
   feature: CadFeature,
@@ -167,19 +224,33 @@ function applyFeature(
       offsetUMm: feature.offsetUMm,
       offsetVMm: feature.offsetVMm,
     });
-    const solid = profileSolid(
-      profile.plane,
-      profile.profile,
-      profile.widthMm,
-      profile.heightMm,
-      feature.depthMm,
-      profile.offsetUMm ?? 0,
-      profile.offsetVMm ?? 0,
-    );
+    const entitySolids =
+      profile.entities && profile.entities.length > 0
+        ? solidsFromSketchEntities(
+            profile.plane,
+            profile.entities,
+            feature.depthMm,
+          )
+        : [];
+    const solid =
+      entitySolids.length > 0
+        ? fuseSolids(entitySolids)
+        : profileSolid(
+            profile.plane,
+            profile.profile,
+            profile.widthMm,
+            profile.heightMm,
+            feature.depthMm,
+            profile.offsetUMm ?? 0,
+            profile.offsetVMm ?? 0,
+          );
     if (feature.kind === "extrude") {
       return current ? current.fuse(solid) : solid;
     }
     if (!current) return makeBaseBox(1, 1, 1);
+    if (entitySolids.length > 0) {
+      return cutSolids(current, entitySolids);
+    }
     try {
       return current.cut(solid);
     } catch {
