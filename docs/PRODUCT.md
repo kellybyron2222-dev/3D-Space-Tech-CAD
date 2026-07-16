@@ -6,9 +6,11 @@
 
 ## Status honesty
 
-Until **table-stakes** ship (sketch, full feature set, selection, assemblies, drawings, STEP), treat the app as a **CAD preview**, not a peer to SolidWorks / Onshape / FreeCAD.
+**CAD preview advancing toward table-stakes.** Part Studio: sketch profiles → extrude/cut/hole/revolve/fillet/chamfer/mirror/linear pattern, undo/reorder, named params, autosave + share links, assemblies lite (distance mates), associative drawing SVG, STEP/STL I/O, mass props. Still missing: interactive constraint solver, edge-accurate selection, production drawings, true mates.
 
-Master plan: `.cursor/plans/spacetech_mvp_table_stakes.plan.md` (and competitive canvas).
+Treat as **preview**, not a peer to SolidWorks / Onshape / FreeCAD, until the Phase A exit path is solid in CI.
+
+Master plan: `.cursor/plans/spacetech_mvp_table_stakes.plan.md`.
 
 ## Necessary but not sufficient (MVP gate)
 

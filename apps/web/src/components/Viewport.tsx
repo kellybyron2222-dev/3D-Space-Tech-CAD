@@ -3,9 +3,19 @@ import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls as ThreeOrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as THREE from "three";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
+import type { PlaneId, ProfileKind } from "@spacetech/sfd-lang";
 import { ReplicadMesh } from "./ReplicadMesh";
 
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
+
+export interface SketchGhostSpec {
+  plane: PlaneId;
+  profile: ProfileKind;
+  widthMm: number;
+  heightMm: number;
+  offsetUMm?: number;
+  offsetVMm?: number;
+}
 
 function OrbitControls({ enabled }: { enabled: boolean }) {
   const { camera, gl, invalidate } = useThree();
@@ -85,34 +95,61 @@ function Grid() {
   return <primitive object={helper} />;
 }
 
-function DatumPlanes() {
+function SketchGhost({ spec }: { spec: SketchGhostSpec }) {
+  const { plane, profile, widthMm, heightMm, offsetUMm = 0, offsetVMm = 0 } =
+    spec;
+  const geom = useMemo(() => {
+    if (profile === "circle") {
+      return new THREE.CircleGeometry(widthMm / 2, 48);
+    }
+    return new THREE.PlaneGeometry(widthMm, heightMm);
+  }, [profile, widthMm, heightMm]);
+
+  const rotation = useMemo((): [number, number, number] => {
+    if (plane === "front") return [0, 0, 0];
+    if (plane === "top") return [-Math.PI / 2, 0, 0];
+    return [0, Math.PI / 2, 0];
+  }, [plane]);
+
+  const position = useMemo((): [number, number, number] => {
+    if (plane === "front") return [offsetUMm, offsetVMm, 0.2];
+    if (plane === "top") return [offsetUMm, 0.2, offsetVMm];
+    return [0.2, offsetUMm, offsetVMm];
+  }, [plane, offsetUMm, offsetVMm]);
+
+  useEffect(
+    () => () => {
+      geom.dispose();
+    },
+    [geom],
+  );
+
   return (
-    <group>
-      {/* Front XY */}
-      <mesh position={[0, 0, 0]} rotation={[0, 0, 0]}>
-        <planeGeometry args={[120, 120]} />
-        <meshBasicMaterial
-          color="#3d6e8c"
-          transparent
-          opacity={0.06}
-          side={THREE.DoubleSide}
-          depthWrite={false}
-        />
-      </mesh>
-    </group>
+    <mesh position={position} rotation={rotation} geometry={geom}>
+      <meshBasicMaterial
+        color="#c45c26"
+        transparent
+        opacity={0.35}
+        side={THREE.DoubleSide}
+        depthWrite={false}
+      />
+    </mesh>
   );
 }
 
 function SelectableBody({
   mesh,
   selected,
+  faceIndex,
   onSelect,
 }: {
   mesh: TessellationResult;
   selected: boolean;
-  onSelect: () => void;
+  faceIndex: number | null;
+  onSelect: (faceIndex: number | null) => void;
 }) {
   const down = useRef<{ x: number; y: number } | null>(null);
+  const groups = mesh.faces.faceGroups ?? [];
 
   return (
     <group
@@ -127,7 +164,13 @@ function SelectableBody({
         down.current = null;
         if (dx * dx + dy * dy < 16) {
           e.stopPropagation();
-          onSelect();
+          if (groups.length > 0) {
+            const next =
+              faceIndex == null ? 0 : (faceIndex + 1) % groups.length;
+            onSelect(next);
+          } else {
+            onSelect(null);
+          }
         }
       }}
     >
@@ -135,6 +178,7 @@ function SelectableBody({
         faces={mesh.faces}
         edges={mesh.edges}
         color={selected ? "#c45c26" : "#5f7d95"}
+        highlightFaceIndex={faceIndex}
       />
     </group>
   );
@@ -148,6 +192,9 @@ export function Viewport({
   selected,
   onSelectBody,
   onClearSelection,
+  sketchGhost,
+  faceIndex,
+  onFaceIndex,
 }: {
   mesh: TessellationResult | null;
   status: string;
@@ -156,6 +203,9 @@ export function Viewport({
   selected?: boolean;
   onSelectBody?: () => void;
   onClearSelection?: () => void;
+  sketchGhost?: SketchGhostSpec | null;
+  faceIndex?: number | null;
+  onFaceIndex?: (i: number | null) => void;
 }) {
   const dpr = Math.min(
     typeof window !== "undefined" ? window.devicePixelRatio : 1,
@@ -164,12 +214,13 @@ export function Viewport({
   const triCount = mesh?.faces.triangles.length
     ? Math.round(mesh.faces.triangles.length / 3)
     : 0;
+  const faceCount = mesh?.faces.faceGroups?.length ?? 0;
 
   return (
     <div className="viewport-canvas cad-viewport">
       <div className="viewport-hud">
         {mesh
-          ? `${triCount.toLocaleString()} tris · click body to select · drag orbit`
+          ? `${triCount.toLocaleString()} tris · ${faceCount} faces · click cycles face`
           : status}
       </div>
       {mesh && onFit ? (
@@ -186,19 +237,26 @@ export function Viewport({
         onCreated={({ gl }) => {
           gl.setClearColor("#dfe4e8");
         }}
-        onPointerMissed={() => onClearSelection?.()}
+        onPointerMissed={() => {
+          onClearSelection?.();
+          onFaceIndex?.(null);
+        }}
       >
         <ambientLight intensity={0.7} />
         <directionalLight position={[240, -160, 320]} intensity={1.1} />
         <directionalLight position={[-180, 120, 80]} intensity={0.4} />
         <Grid />
-        <DatumPlanes />
+        {sketchGhost ? <SketchGhost spec={sketchGhost} /> : null}
         {mesh ? (
           <>
             <SelectableBody
               mesh={mesh}
               selected={Boolean(selected)}
-              onSelect={() => onSelectBody?.()}
+              faceIndex={faceIndex ?? null}
+              onSelect={(i) => {
+                onSelectBody?.();
+                onFaceIndex?.(i);
+              }}
             />
             <FitCamera mesh={mesh} fitNonce={fitNonce} />
           </>

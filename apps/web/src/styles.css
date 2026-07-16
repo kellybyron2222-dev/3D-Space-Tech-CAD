@@ -65,10 +65,60 @@ button.linkish {
 
 /* —— CAD chrome —— */
 .cad-app {
-  display: grid;
-  grid-template-rows: auto auto 1fr;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   background: var(--bg);
+}
+
+.cad-workspace,
+.assembly-layout,
+.drawing-stub,
+.analysis-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.ux-banner {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.35rem 0.75rem;
+  background: #e8f0f6;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.mass-block,
+.params-block {
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.params-block h2 {
+  margin-top: 0;
+}
+
+.assembly-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 0;
+  height: 100%;
+}
+
+.asm-instance {
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+
+.error-text {
+  color: var(--fail);
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .cad-topbar {

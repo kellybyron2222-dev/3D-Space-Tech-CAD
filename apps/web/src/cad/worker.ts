@@ -12,6 +12,7 @@ import type { FeatureDocument, SfdDocument } from "@spacetech/sfd-lang";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
 import { buildShapeFromSfd } from "./buildFromSfd";
 import { buildShapeFromFeatures } from "./buildFromFeatures";
+import type { MassPropsResult, RebuildResult } from "./types";
 
 let loaded = false;
 
@@ -26,6 +27,8 @@ async function initOc(): Promise<void> {
 
 const started = initOc();
 
+const AL_DENSITY = 2.7e-6; // kg/mm³
+
 function toPlainMesh(shape: Shape3D): TessellationResult {
   const faces = shape.mesh({ tolerance: 0.15, angularTolerance: 0.6 });
   const edges = shape.meshEdges({ tolerance: 0.15, angularTolerance: 0.6 });
@@ -39,6 +42,32 @@ function toPlainMesh(shape: Shape3D): TessellationResult {
     edges: {
       lines: Array.from(edges.lines ?? []),
     },
+  };
+}
+
+function massFromShape(shape: Shape3D): MassPropsResult {
+  let volumeMm3 = 1;
+  let cg = { x: 0, y: 0, z: 0 };
+  try {
+    const vol = (shape as Shape3D & { volume: number | (() => number) }).volume;
+    volumeMm3 = typeof vol === "function" ? vol.call(shape) : Number(vol);
+  } catch {
+    volumeMm3 = 1;
+  }
+  try {
+    const c = (
+      shape as Shape3D & { centerOfMass: [number, number, number] }
+    ).centerOfMass;
+    cg = { x: c[0], y: c[1], z: c[2] };
+  } catch {
+    /* keep zero */
+  }
+  if (!Number.isFinite(volumeMm3) || volumeMm3 <= 0) volumeMm3 = 1;
+  return {
+    volumeMm3,
+    massKg: volumeMm3 * AL_DENSITY,
+    cgMm: cg,
+    densityKgPerMm3: AL_DENSITY,
   };
 }
 
@@ -66,14 +95,26 @@ const api = {
     });
   },
 
-  async rebuildFeatures(doc: FeatureDocument): Promise<TessellationResult> {
+  async rebuildFeatures(doc: FeatureDocument): Promise<RebuildResult> {
     await started;
-    return toPlainMesh(buildShapeFromFeatures(doc));
+    const shape = buildShapeFromFeatures(doc);
+    return {
+      mesh: toPlainMesh(shape),
+      mass: massFromShape(shape),
+    };
   },
 
   async exportFeaturesStep(doc: FeatureDocument): Promise<Blob> {
     await started;
     return buildShapeFromFeatures(doc).blobSTEP();
+  },
+
+  async exportFeaturesStl(doc: FeatureDocument): Promise<Blob> {
+    await started;
+    return buildShapeFromFeatures(doc).blobSTL({
+      tolerance: 0.15,
+      angularTolerance: 0.6,
+    });
   },
 
   async importModel(file: File): Promise<TessellationResult> {

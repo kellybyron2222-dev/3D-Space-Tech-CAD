@@ -1,0 +1,290 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  applyAssemblyMates,
+  createBracketDemo,
+  createDemoAssembly,
+  newFeatureId,
+  serializeAssemblyDocument,
+  type AssemblyDocument,
+  type FeatureDocument,
+} from "@spacetech/sfd-lang";
+import { saveAs } from "file-saver";
+import type { TessellationResult } from "@spacetech/kernel-bridge";
+import { getCadApi } from "../cad/client";
+import { Viewport } from "./Viewport";
+
+function assemblyFromPart(part: FeatureDocument): AssemblyDocument {
+  const post: FeatureDocument = {
+    version: 1,
+    name: "Post",
+    rollbackIndex: null,
+    features: [
+      {
+        id: "p1",
+        name: "Post",
+        kind: "box",
+        widthMm: 12,
+        depthMm: 12,
+        heightMm: 40,
+      },
+    ],
+  };
+  return {
+    version: 1,
+    name: `${part.name} Assembly`,
+    instances: [
+      {
+        id: "i-base",
+        name: part.name,
+        part: structuredClone(part),
+        xMm: 0,
+        yMm: 0,
+        zMm: 0,
+      },
+      {
+        id: "i-post",
+        name: "Post",
+        part: post,
+        xMm: 25,
+        yMm: 0,
+        zMm: 8,
+      },
+    ],
+    mates: [
+      {
+        id: "m1",
+        kind: "distance",
+        partA: "i-base",
+        partB: "i-post",
+        distanceMm: 8,
+      },
+    ],
+  };
+}
+
+/** Assembly lite — place instances; distance mates drive Z offset. */
+export function AssemblyPanel({ partDoc }: { partDoc?: FeatureDocument }) {
+  const seed = useMemo(
+    () => (partDoc ? assemblyFromPart(partDoc) : createDemoAssembly()),
+    // only reseeds when part name/feature count changes intentionally via button
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const [asm, setAsm] = useState<AssemblyDocument>(seed);
+  const [mesh, setMesh] = useState<TessellationResult | null>(null);
+  const [status, setStatus] = useState("Building assembly…");
+  const [fitNonce, setFitNonce] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const rebuild = useCallback(async (doc: AssemblyDocument) => {
+    setStatus("Rebuilding assembly…");
+    setError(null);
+    try {
+      const cad = getCadApi();
+      await cad.ready();
+      const placed = applyAssemblyMates(doc);
+      const parts: FeatureDocument[] = placed.instances.map((inst) => {
+        const cloned: FeatureDocument = structuredClone(inst.part);
+        const first = cloned.features.find((f) => f.kind === "box");
+        if (first && first.kind === "box") {
+          first.xMm = (first.xMm ?? 0) + inst.xMm;
+          first.yMm = (first.yMm ?? 0) + inst.yMm;
+          first.zMm = (first.zMm ?? 0) + inst.zMm;
+        }
+        return cloned;
+      });
+
+      const merged: FeatureDocument = {
+        version: 1,
+        name: doc.name,
+        rollbackIndex: null,
+        features: [],
+      };
+      for (const [i, part] of parts.entries()) {
+        for (const f of part.features) {
+          if (f.kind === "sketch") continue;
+          merged.features.push({
+            ...f,
+            id: `${doc.instances[i]!.id}-${f.id}`,
+            name: `${doc.instances[i]!.name}:${f.name}`,
+          });
+        }
+      }
+      const result = await cad.rebuildFeatures(merged);
+      setMesh(result.mesh);
+      setFitNonce((n) => n + 1);
+      setStatus(
+        `${doc.instances.length} instances · ${doc.mates.length} mates · ${result.mass.massKg.toFixed(3)} kg (Al L0)`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Assembly failed");
+      setStatus("Assembly rebuild failed");
+    }
+  }, []);
+
+  useEffect(() => {
+    void rebuild(asm);
+  }, [asm, rebuild]);
+
+  function updateOffset(id: string, axis: "xMm" | "yMm" | "zMm", value: number) {
+    setAsm((prev) => ({
+      ...prev,
+      instances: prev.instances.map((inst) =>
+        inst.id === id ? { ...inst, [axis]: value } : inst,
+      ),
+    }));
+  }
+
+  function updateMateDistance(id: string, distanceMm: number) {
+    setAsm((prev) => ({
+      ...prev,
+      mates: prev.mates.map((m) =>
+        m.id === id ? { ...m, distanceMm } : m,
+      ),
+    }));
+  }
+
+  function syncFromPart() {
+    if (!partDoc) {
+      setAsm(createDemoAssembly());
+      return;
+    }
+    setAsm(assemblyFromPart(partDoc));
+  }
+
+  function addPostInstance() {
+    setAsm((prev) => ({
+      ...prev,
+      instances: [
+        ...prev.instances,
+        {
+          id: newFeatureId("inst"),
+          name: `Post ${prev.instances.length}`,
+          part: {
+            version: 1,
+            name: "Post",
+            rollbackIndex: null,
+            features: [
+              {
+                id: "p1",
+                name: "Post",
+                kind: "box",
+                widthMm: 10,
+                depthMm: 10,
+                heightMm: 30,
+              },
+            ],
+          },
+          xMm: 10 * prev.instances.length,
+          yMm: 0,
+          zMm: 8,
+        },
+      ],
+    }));
+  }
+
+  return (
+    <div className="assembly-layout">
+      <aside className="feature-tree">
+        <div className="tree-head">
+          <span>Instances</span>
+          <button type="button" className="linkish" onClick={syncFromPart}>
+            {partDoc ? "Use Part Studio" : "Reset demo"}
+          </button>
+        </div>
+        <ul>
+          {asm.instances.map((inst) => (
+            <li key={inst.id} className="asm-instance">
+              <strong>{inst.name}</strong>
+              <label className="field">
+                <span>X</span>
+                <input
+                  type="number"
+                  value={inst.xMm}
+                  onChange={(e) =>
+                    updateOffset(inst.id, "xMm", Number(e.target.value))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Y</span>
+                <input
+                  type="number"
+                  value={inst.yMm}
+                  onChange={(e) =>
+                    updateOffset(inst.id, "yMm", Number(e.target.value))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Z</span>
+                <input
+                  type="number"
+                  value={inst.zMm}
+                  onChange={(e) =>
+                    updateOffset(inst.id, "zMm", Number(e.target.value))
+                  }
+                />
+              </label>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className="secondary" onClick={addPostInstance}>
+          Add post
+        </button>
+        <div className="tree-head" style={{ marginTop: "0.75rem" }}>
+          <span>Mates</span>
+        </div>
+        <ul>
+          {asm.mates.map((m) => (
+            <li key={m.id} className="asm-instance">
+              <strong>
+                {m.kind} · {m.partA} → {m.partB}
+              </strong>
+              {m.kind === "distance" ? (
+                <label className="field">
+                  <span>Dist</span>
+                  <input
+                    type="number"
+                    value={m.distanceMm ?? 0}
+                    onChange={(e) =>
+                      updateMateDistance(m.id, Number(e.target.value))
+                    }
+                  />
+                </label>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          className="secondary"
+          style={{ marginTop: "0.5rem" }}
+          onClick={() => {
+            saveAs(
+              new Blob([serializeAssemblyDocument(asm)], {
+                type: "application/json",
+              }),
+              `${asm.name.replace(/\s+/g, "_")}.asm.json`,
+            );
+          }}
+        >
+          Save assembly
+        </button>
+        <p className="tree-hint">
+          Distance mates set partB Z = partA Z + dist. Use Part Studio pulls
+          current part as base ({partDoc?.name ?? createBracketDemo().name}).
+        </p>
+        {error ? <p className="error-text">{error}</p> : null}
+      </aside>
+      <section className="cad-viewport-wrap">
+        <Viewport
+          mesh={mesh}
+          status={status}
+          fitNonce={fitNonce}
+          onFit={() => setFitNonce((n) => n + 1)}
+        />
+      </section>
+    </div>
+  );
+}
