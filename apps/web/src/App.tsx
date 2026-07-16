@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { saveAs } from "file-saver";
 import {
-  applyParameters,
+  setParameter,
   createBracketDemo,
   createEmptyFeatureDocument,
   createCircleSketchEntity,
@@ -872,17 +872,23 @@ export function App() {
                         value={val}
                         onChange={(e) => {
                           const n = Number(e.target.value);
-                          history.set((prev) =>
-                            applyParameters({
-                              ...prev,
-                              parameters: { ...prev.parameters, [key]: n },
-                            }),
-                          );
+                          history.set((prev) => setParameter(prev, key, n));
                         }}
                       />
                     </label>
                   ))
                 )}
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    const name = window.prompt("Parameter name?");
+                    if (!name?.trim()) return;
+                    history.set((prev) => setParameter(prev, name.trim(), 10));
+                  }}
+                >
+                  Add param
+                </button>
               </div>
               {mass ? (
                 <div className="mass-block">

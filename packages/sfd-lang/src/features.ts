@@ -624,6 +624,17 @@ export function applyParameters(doc: FeatureDocument): FeatureDocument {
   };
 }
 
+export function setParameter(
+  doc: FeatureDocument,
+  key: string,
+  value: number,
+): FeatureDocument {
+  return applyParameters({
+    ...doc,
+    parameters: { ...doc.parameters, [key]: value },
+  });
+}
+
 /** Apply distance mates as placement offsets on partB relative to partA. */
 export function applyAssemblyMates(doc: AssemblyDocument): AssemblyDocument {
   const instances = doc.instances.map((i) => ({ ...i }));

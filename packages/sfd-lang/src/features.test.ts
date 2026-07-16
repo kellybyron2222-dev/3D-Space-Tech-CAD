@@ -4,6 +4,7 @@ import {
   activeFeatures,
   applyAssemblyMates,
   applyParameters,
+  setParameter,
   createBracketDemo,
   createCircleSketchEntity,
   createDemoAssembly,
@@ -72,6 +73,22 @@ describe("feature document", () => {
     assert.ok(chassis && chassis.kind === "box");
     assert.equal(chassis.widthMm, 110);
     assert.equal(chassis.heightMm, 350);
+  });
+
+  it("setParameter stores key and applies bindings", () => {
+    const base = createBracketDemo();
+    const doc = setParameter(base, "wall", 7);
+    assert.equal(doc.parameters?.wall, 7);
+    const box = doc.features.find((f) => f.id === "f-base");
+    assert.ok(box && box.kind === "box");
+    assert.equal(box.heightMm, 7);
+  });
+
+  it("setParameter merges with existing parameters", () => {
+    const doc = setParameter(createBracketDemo(), "custom", 10);
+    assert.equal(doc.parameters?.wall, 4);
+    assert.equal(doc.parameters?.holeDia, 6);
+    assert.equal(doc.parameters?.custom, 10);
   });
 
   it("applyAssemblyMates sets distance on partB Z", () => {
