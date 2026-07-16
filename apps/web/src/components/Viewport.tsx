@@ -705,6 +705,7 @@ export function Viewport({
   const [handleDragging, setHandleDragging] = useState(false);
   const [placeSizing, setPlaceSizing] = useState(false);
   const [placeSizeMm, setPlaceSizeMm] = useState<number | null>(null);
+  const [hoverEdgeIndex, setHoverEdgeIndex] = useState<number | null>(null);
   const [hoverPoint, setHoverPoint] = useState<{
     x: number;
     y: number;
@@ -770,6 +771,12 @@ export function Viewport({
     }
   }, [placementTool]);
 
+  useEffect(() => {
+    if (!edgePickTool) setHoverEdgeIndex(null);
+  }, [edgePickTool]);
+
+  const displayEdgeIndex = hoverEdgeIndex ?? edgeIndex ?? null;
+
   return (
     <div
       className={`viewport-canvas cad-viewport${placementCrosshair ? " tool-cursor-crosshair" : ""}`}
@@ -826,18 +833,19 @@ export function Viewport({
                 mesh={mesh}
                 selected={Boolean(selected)}
                 faceIndex={faceIndex ?? null}
-                edgeIndex={edgeIndex ?? null}
+                edgeIndex={displayEdgeIndex}
                 selectionEnabled={!placingSketch}
                 placementTool={placementTool}
                 edgePickTool={edgePickTool}
                 onHoverPoint={placementTool ? setHoverPointSnapped : undefined}
                 onPlaceSize={setPlaceSizeMm}
                 onPlaceSizing={setPlaceSizing}
-                onHoverEdge={edgePickTool ? (i) => onEdgeIndex?.(i) : undefined}
+                onHoverEdge={edgePickTool ? setHoverEdgeIndex : undefined}
                 onSelectFace={(i, opts) => {
                   onSelectBody?.(i, opts);
                 }}
                 onSelectEdge={(i, opts) => {
+                  setHoverEdgeIndex(null);
                   onSelectBody?.(null, { ...opts, edgeSelect: true });
                   onEdgeIndex?.(i);
                 }}
