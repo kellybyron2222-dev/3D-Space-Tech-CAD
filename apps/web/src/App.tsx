@@ -624,6 +624,20 @@ export function App() {
 
   function onSelectBody() {
     setBodySelected(true);
+    // Prefer an editable solid in the tree so drag handles appear
+    const editable =
+      (selectedFeature?.kind === "box" || selectedFeature?.kind === "hole"
+        ? selectedFeature
+        : null) ??
+      [...doc.features]
+        .reverse()
+        .find((f) => f.kind === "box" || f.kind === "hole");
+    if (editable) {
+      setSelectedFeatureId(editable.id);
+      setUxNote(
+        `Selected ${editable.name} — drag the colored handles to move/resize. Tools like Cut still add features in the tree.`,
+      );
+    }
     if (mesh?.faces.vertices.length) {
       const v = mesh.faces.vertices;
       let minX = Infinity,
@@ -958,8 +972,9 @@ export function App() {
                 })}
               </ul>
               <p className="tree-hint">
-                Sketch → place/edit → Extrude. Click face · Shift+click edge.
-                Double-click = rollback · Ctrl+Z undo.
+                Click the solid to select Base/Hole, then drag colored handles.
+                Or edit Properties. Cut/Fillet add features (not click-drag tools
+                yet). Double-click = rollback · Ctrl+Z undo.
               </p>
             </aside>
 
@@ -978,6 +993,27 @@ export function App() {
                   setFaceIndex(null);
                   setEdgeIndex(null);
                   setEdgeLengthMm(null);
+                }}
+                editFeature={
+                  selectedFeature?.kind === "box" ||
+                  selectedFeature?.kind === "hole"
+                    ? selectedFeature
+                    : null
+                }
+                onFeatureDragStart={() => {
+                  // Snapshot before drag so Ctrl+Z restores pre-drag pose
+                  studio.setDoc((prev) => structuredClone(prev));
+                }}
+                onFeatureDrag={(patch) => {
+                  if (!selectedFeatureId) return;
+                  studio.replaceDoc((prev) => ({
+                    ...prev,
+                    features: prev.features.map((f) =>
+                      f.id === selectedFeatureId
+                        ? ({ ...f, ...patch } as CadFeature)
+                        : f,
+                    ),
+                  }));
                 }}
                 sketchGhost={sketchGhost}
                 sketchPlaceMode={

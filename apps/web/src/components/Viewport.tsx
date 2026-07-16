@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls as ThreeOrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as THREE from "three";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
-import type { PlaneId, ProfileKind } from "@spacetech/sfd-lang";
+import type { CadFeature, PlaneId, ProfileKind } from "@spacetech/sfd-lang";
 import { ReplicadMesh, edgeCountFromLines } from "./ReplicadMesh";
+import { FeatureHandles, type FeatureDragPatch } from "./FeatureHandles";
 
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
 
@@ -522,6 +523,10 @@ export function Viewport({
   onFaceIndex,
   edgeIndex,
   onEdgeIndex,
+  editFeature = null,
+  onFeatureDrag,
+  onFeatureDragStart,
+  onFeatureDragEnd,
 }: {
   mesh: TessellationResult | null;
   status: string;
@@ -537,7 +542,13 @@ export function Viewport({
   onFaceIndex?: (i: number | null) => void;
   edgeIndex?: number | null;
   onEdgeIndex?: (i: number | null) => void;
+  /** Selected box/hole — shows drag handles in the viewport */
+  editFeature?: CadFeature | null;
+  onFeatureDrag?: (patch: FeatureDragPatch) => void;
+  onFeatureDragStart?: () => void;
+  onFeatureDragEnd?: () => void;
 }) {
+  const [handleDragging, setHandleDragging] = useState(false);
   const dpr = Math.min(
     typeof window !== "undefined" ? window.devicePixelRatio : 1,
     2,
@@ -548,6 +559,9 @@ export function Viewport({
   const faceCount = mesh?.faces.faceGroups?.length ?? 0;
   const edgeCount = edgeCountFromLines(mesh?.edges.lines);
   const placingSketch = Boolean(sketchGhost && sketchPlaceMode && onSketchPlace);
+  const canEditHandles =
+    Boolean(editFeature && onFeatureDrag) &&
+    (editFeature?.kind === "box" || editFeature?.kind === "hole");
   const placeHint =
     sketchPlaceMode === "circle"
       ? "click to place circle"
@@ -565,7 +579,7 @@ export function Viewport({
         {placingSketch && placeHint
           ? `[SKETCH] ${placeHint}`
           : mesh
-            ? `${triCount.toLocaleString()} tris · ${faceCount} faces · ${edgeCount} edges · click face · Shift+click edge${edgeIndex != null ? ` · edge #${edgeIndex}` : ""}`
+            ? `${triCount.toLocaleString()} tris · ${faceCount} faces · ${edgeCount} edges · click face · Shift+click edge${edgeIndex != null ? ` · edge #${edgeIndex}` : ""}${canEditHandles ? " · drag handles to edit" : ""}`
             : status}
       </div>
       {mesh && onFit ? (
@@ -621,9 +635,20 @@ export function Viewport({
               />
             </RaycastSuppressor>
             <FitCamera mesh={mesh} fitNonce={fitNonce} />
+            {canEditHandles && editFeature && onFeatureDrag ? (
+              <FeatureHandles
+                feature={editFeature}
+                onPatch={onFeatureDrag}
+                onDragState={(dragging) => {
+                  setHandleDragging(dragging);
+                  if (dragging) onFeatureDragStart?.();
+                  else onFeatureDragEnd?.();
+                }}
+              />
+            ) : null}
           </>
         ) : null}
-        <OrbitControls enabled />
+        <OrbitControls enabled={!handleDragging && !placingSketch} />
       </Canvas>
     </div>
   );

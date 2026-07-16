@@ -104,6 +104,22 @@ export function usePartStudioHistory(
     [set],
   );
 
+  /** Live drag updates — mutates present frame without new undo entries. */
+  const replaceDoc = useCallback(
+    (
+      next:
+        | PartStudioSnapshot["doc"]
+        | ((prev: PartStudioSnapshot["doc"]) => PartStudioSnapshot["doc"]),
+    ) => {
+      replacePresent((snap) => {
+        const doc =
+          typeof next === "function" ? next(snap.doc) : next;
+        return { ...snap, doc };
+      });
+    },
+    [replacePresent],
+  );
+
   const setSelectedFeatureId = useCallback(
     (selectedFeatureId: string | null) => {
       replacePresent((snap) => {
@@ -130,6 +146,7 @@ export function usePartStudioHistory(
     doc: present.doc,
     selectedFeatureId: present.selectedFeatureId,
     setDoc,
+    replaceDoc,
     setSelectedFeatureId,
     resetDoc,
     undo,
