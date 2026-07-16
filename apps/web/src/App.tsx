@@ -338,6 +338,28 @@ export function App() {
     });
   }
 
+  function duplicateSelected() {
+    if (!selectedFeature) return;
+    const prefixByKind: Partial<Record<CadFeature["kind"], string>> = {
+      sketch: "sk",
+      extrude: "ext",
+      box: "box",
+      cut: "cut",
+      hole: "hole",
+      fillet: "fil",
+      chamfer: "chm",
+      revolve: "rev",
+      mirror: "mir",
+      linearPattern: "pat",
+    };
+    const prefix = prefixByKind[selectedFeature.kind] ?? "feat";
+    addFeature({
+      ...selectedFeature,
+      id: newFeatureId(prefix),
+      name: `${selectedFeature.name} (copy)`,
+    } as CadFeature);
+  }
+
   function deleteSelected() {
     if (!selectedFeatureId) return;
     history.set((prev) => ({
@@ -704,6 +726,14 @@ export function App() {
               onClick={suppressSelected}
             >
               Suppress
+            </button>
+            <button
+              type="button"
+              className="tool"
+              disabled={!selectedFeatureId}
+              onClick={duplicateSelected}
+            >
+              Duplicate
             </button>
             <button
               type="button"
