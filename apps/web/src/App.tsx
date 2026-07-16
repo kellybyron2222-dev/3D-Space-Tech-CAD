@@ -1236,6 +1236,11 @@ export function App() {
                     : null
                 }
                 dimensionReadout={selectedFeatureDimensions}
+                placementTool={
+                  activeTool === "hole" || activeTool === "cut"
+                    ? activeTool
+                    : null
+                }
                 onClearSelection={() => {
                   setBodySelected(false);
                   setMeasureMm(null);

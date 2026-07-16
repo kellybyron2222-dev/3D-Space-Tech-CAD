@@ -129,3 +129,9 @@ Treated as wrong product shape. Analysis lives under **Analysis** tab.
 - Placement HUD (`viewport-hud--placing`) gets stronger tint/border when tool or handle edit is active
 
 **Sim feedback:** "Cut is as editable as Hole now ? click to place, drag handles, see dims in the HUD. Orange hint bar is easier to spot in tool mode."
+
+### Loop K ? Hover place ghost
+- Hole/Cut tools show a translucent cylinder ghost under the cursor before click
+- HUD switches to live `Hole @ (x, y)` / `Cut @ (x, y)` while hovering the solid
+
+**Sim feedback:** "Seeing the cutter before I click removes the ?preset rectangle? mystery ? placement feels intentional."

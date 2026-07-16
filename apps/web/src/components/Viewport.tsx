@@ -448,6 +448,35 @@ function RaycastSuppressor({
   return <group ref={ref}>{children}</group>;
 }
 
+function ToolPlaceGhost({
+  kind,
+  point,
+}: {
+  kind: "hole" | "cut";
+  point: { x: number; y: number; z: number };
+}) {
+  // Scene is Z-up; Three cylinder is Y-up — rotate onto Z for through-cut preview.
+  const r = kind === "hole" ? 3 : 6;
+  const h = kind === "hole" ? 14 : 20;
+  return (
+    <mesh
+      position={[point.x, point.y, point.z]}
+      rotation={[Math.PI / 2, 0, 0]}
+      renderOrder={3}
+    >
+      <cylinderGeometry args={[r, r, h, 28]} />
+      <meshStandardMaterial
+        color="#c45c26"
+        transparent
+        opacity={0.4}
+        depthWrite={false}
+        metalness={0.1}
+        roughness={0.55}
+      />
+    </mesh>
+  );
+}
+
 function SelectableBody({
   mesh,
   selected,
@@ -455,6 +484,7 @@ function SelectableBody({
   edgeIndex,
   onSelectFace,
   onSelectEdge,
+  onHoverPoint,
   selectionEnabled = true,
 }: {
   mesh: TessellationResult;
@@ -477,6 +507,7 @@ function SelectableBody({
       point?: { x: number; y: number; z: number };
     },
   ) => void;
+  onHoverPoint?: (point: { x: number; y: number; z: number } | null) => void;
   selectionEnabled?: boolean;
 }) {
   const down = useRef<{ x: number; y: number } | null>(null);
@@ -490,6 +521,13 @@ function SelectableBody({
         if (!selectionEnabled) return;
         down.current = { x: e.clientX, y: e.clientY };
         e.stopPropagation();
+      }}
+      onPointerMove={(e: ThreeEvent<PointerEvent>) => {
+        if (!selectionEnabled || !onHoverPoint) return;
+        onHoverPoint({ x: e.point.x, y: e.point.y, z: e.point.z });
+      }}
+      onPointerOut={() => {
+        onHoverPoint?.(null);
       }}
       onPointerUp={(e: ThreeEvent<PointerEvent>) => {
         if (!selectionEnabled || !down.current) return;
@@ -557,6 +595,7 @@ export function Viewport({
   onFeatureDragEnd,
   toolHint = null,
   dimensionReadout = null,
+  placementTool = null,
 }: {
   mesh: TessellationResult | null;
   status: string;
@@ -571,7 +610,7 @@ export function Viewport({
   faceIndex?: number | null;
   edgeIndex?: number | null;
   onEdgeIndex?: (i: number | null) => void;
-  /** Selected box/hole/extrude/revolve — shows drag handles in the viewport */
+  /** Selected box/hole/extrude/revolve/cut — shows drag handles in the viewport */
   editFeature?: CadFeature | null;
   onFeatureDrag?: (patch: FeatureDragPatch) => void;
   onFeatureDragStart?: () => void;
@@ -579,8 +618,15 @@ export function Viewport({
   toolHint?: string | null;
   /** Live dims for selected editable feature */
   dimensionReadout?: string | null;
+  /** Active place tool that shows a hover ghost */
+  placementTool?: "hole" | "cut" | null;
 }) {
   const [handleDragging, setHandleDragging] = useState(false);
+  const [hoverPoint, setHoverPoint] = useState<{
+    x: number;
+    y: number;
+    z: number;
+  } | null>(null);
   const dpr = Math.min(
     typeof window !== "undefined" ? window.devicePixelRatio : 1,
     2,
@@ -606,6 +652,14 @@ export function Viewport({
         : sketchPlaceMode === "line"
           ? "drag to place line"
           : null;
+  const hoverReadout =
+    placementTool && hoverPoint
+      ? `${placementTool === "hole" ? "Hole" : "Cut"} @ (${hoverPoint.x.toFixed(1)}, ${hoverPoint.y.toFixed(1)}) — click to place`
+      : null;
+
+  useEffect(() => {
+    if (!placementTool) setHoverPoint(null);
+  }, [placementTool]);
 
   return (
     <div
@@ -617,7 +671,7 @@ export function Viewport({
         {placingSketch && placeHint
           ? `[SKETCH] ${placeHint}`
           : toolHint
-            ? `[TOOL] ${toolHint}`
+            ? `[TOOL] ${hoverReadout ?? toolHint}`
             : handleDragging && dimensionReadout
               ? `[EDIT] ${dimensionReadout}`
               : mesh
@@ -665,6 +719,7 @@ export function Viewport({
                 faceIndex={faceIndex ?? null}
                 edgeIndex={edgeIndex ?? null}
                 selectionEnabled={!placingSketch}
+                onHoverPoint={placementTool ? setHoverPoint : undefined}
                 onSelectFace={(i, opts) => {
                   onSelectBody?.(i, opts);
                 }}
@@ -675,6 +730,9 @@ export function Viewport({
               />
             </RaycastSuppressor>
             <FitCamera mesh={mesh} fitNonce={fitNonce} />
+            {placementTool && hoverPoint ? (
+              <ToolPlaceGhost kind={placementTool} point={hoverPoint} />
+            ) : null}
             {canEditHandles && editFeature && onFeatureDrag ? (
               <FeatureHandles
                 feature={editFeature}
