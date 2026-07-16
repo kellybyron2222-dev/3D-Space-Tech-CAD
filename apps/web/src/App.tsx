@@ -22,6 +22,7 @@ import {
   type FeatureDocument,
   type FilletFeature,
   type HoleFeature,
+  type ImportBodyFeature,
   type LinearPatternFeature,
   type MirrorFeature,
   type RevolveFeature,
@@ -30,6 +31,12 @@ import {
 import type { TessellationResult } from "@spacetech/kernel-bridge";
 import { getCadApi } from "./cad/client";
 import { copyShareUrl, decodeShareHash, encodeShareHash } from "./cad/shareLink";
+import {
+  getMaterial,
+  massKgFromVolume,
+  MATERIALS,
+  type MaterialId,
+} from "./cad/massDisplay";
 import type { MassPropsResult } from "./cad/types";
 import { AnalysisPanel } from "./components/AnalysisPanel";
 import { AssemblyPanel } from "./components/AssemblyPanel";
@@ -79,6 +86,7 @@ export function App() {
     useState<SketchPlaceMode>(null);
   const [mesh, setMesh] = useState<TessellationResult | null>(null);
   const [mass, setMass] = useState<MassPropsResult | null>(null);
+  const [materialId, setMaterialId] = useState<MaterialId>("al");
   const [importPreview, setImportPreview] = useState<TessellationResult | null>(
     null,
   );
@@ -90,6 +98,11 @@ export function App() {
   const [uxNote, setUxNote] = useState<string | null>(null);
   const rebuildGen = useRef(0);
   const displayMesh = importPreview ?? mesh;
+  const displayMaterial = getMaterial(materialId);
+  const displayMassKg = useMemo(() => {
+    if (!mass) return null;
+    return massKgFromVolume(mass.volumeMm3, displayMaterial.densityKgPerMm3);
+  }, [mass, displayMaterial.densityKgPerMm3]);
 
   const selectedFeature = useMemo(
     () => doc.features.find((f) => f.id === selectedFeatureId) ?? null,
@@ -130,7 +143,9 @@ export function App() {
       if (!Number.isFinite(tris) || tris <= 0) {
         throw new Error("Empty mesh from rebuild");
       }
-      setImportPreview(null);
+      if (!next.features.some((f) => f.kind === "importBody")) {
+        setImportPreview(null);
+      }
       setMesh(result.mesh);
       setMass(result.mass);
       setStatus(
@@ -480,10 +495,25 @@ export function App() {
       const cad = getCadApi();
       await cad.ready();
       const result = await cad.importModel(file);
+      const id = newFeatureId("imp");
+      const feature: ImportBodyFeature = {
+        id,
+        name: file.name,
+        kind: "importBody",
+        sourceLabel: file.name,
+      };
+      history.set((prev) => ({
+        ...prev,
+        features: [...prev.features, feature],
+      }));
+      setSelectedFeatureId(id);
       setImportPreview(result);
       setFitNonce((n) => n + 1);
       setBodySelected(true);
       setStatus(`Imported ${file.name} (preview overlay)`);
+      setUxNote(
+        `Imported ${file.name} — preview overlay only until B-rep commit`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {
@@ -955,11 +985,35 @@ export function App() {
                   Add param
                 </button>
               </div>
-              {mass ? (
+              {mass && displayMassKg != null ? (
                 <div className="mass-block">
                   <div className="stat">
-                    <span>Mass (Al L0)</span>
-                    <span>{mass.massKg.toFixed(4)} kg</span>
+                    <span>Mass</span>
+                    <span
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.45rem",
+                      }}
+                    >
+                      <span>
+                        {displayMassKg.toFixed(4)} kg ·{" "}
+                        <select
+                          value={materialId}
+                          aria-label="Material density"
+                          onChange={(e) =>
+                            setMaterialId(e.target.value as MaterialId)
+                          }
+                          style={{ width: "auto", font: "inherit" }}
+                        >
+                          {MATERIALS.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                      </span>
+                    </span>
                   </div>
                   <div className="stat">
                     <span>Volume</span>
