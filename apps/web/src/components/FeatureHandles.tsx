@@ -13,7 +13,11 @@ type HandleKind =
   | "holeXY"
   | "holeDia"
   | "extrudeDepth"
-  | "revolveRadius";
+  | "revolveRadius"
+  | "cutMove"
+  | "cutWidth"
+  | "cutHeight"
+  | "cutDepth";
 
 const HANDLE_RADIUS = 2.8;
 
@@ -46,6 +50,51 @@ function extrusionAxis(plane: PlaneId): "x" | "y" | "z" {
   if (plane === "front") return "z";
   if (plane === "top") return "y";
   return "x";
+}
+
+function offsetAlongAxis(
+  pos: [number, number, number],
+  axis: "x" | "y" | "z",
+  mm: number,
+): [number, number, number] {
+  if (axis === "x") return [pos[0] + mm, pos[1], pos[2]];
+  if (axis === "y") return [pos[0], pos[1] + mm, pos[2]];
+  return [pos[0], pos[1], pos[2] + mm];
+}
+
+function profileWidthHandlePosition(
+  plane: PlaneId,
+  u: number,
+  v: number,
+  widthMm: number,
+  depthMm: number,
+): [number, number, number] {
+  const mid = extrusionDepthPosition(plane, u, v, depthMm / 2);
+  if (plane === "front") return [u + widthMm / 2, v, mid[2]];
+  if (plane === "top") return [u + widthMm / 2, mid[1], v];
+  return [mid[0], u + widthMm / 2, v];
+}
+
+function profileHeightHandlePosition(
+  plane: PlaneId,
+  u: number,
+  v: number,
+  heightMm: number,
+  depthMm: number,
+): [number, number, number] {
+  const mid = extrusionDepthPosition(plane, u, v, depthMm / 2);
+  if (plane === "front") return [u, v + heightMm / 2, mid[2]];
+  if (plane === "top") return [u, mid[1], v + heightMm / 2];
+  return [mid[0], u, v + heightMm / 2];
+}
+
+function profileSizeAxis(
+  plane: PlaneId,
+  dim: "width" | "height",
+): "x" | "y" | "z" {
+  if (plane === "front") return dim === "width" ? "x" : "y";
+  if (plane === "top") return dim === "width" ? "x" : "z";
+  return dim === "width" ? "y" : "z";
 }
 
 /**
@@ -82,6 +131,15 @@ export function FeatureHandles({
   if (feature.kind === "extrude") {
     return (
       <ExtrudeHandles
+        feature={feature}
+        onPatch={onPatch}
+        onDragState={onDragState}
+      />
+    );
+  }
+  if (feature.kind === "cut") {
+    return (
+      <CutHandles
         feature={feature}
         onPatch={onPatch}
         onDragState={onDragState}
@@ -212,6 +270,121 @@ function HoleHandles({
         onDragState={onDragState}
         onDrag={(delta) => {
           onPatch({ diameterMm: snapMm(Math.max(0.5, dia + delta.x * 2)) });
+        }}
+      />
+    </group>
+  );
+}
+
+function CutHandles({
+  feature,
+  onPatch,
+  onDragState,
+}: {
+  feature: Extract<CadFeature, { kind: "cut" }>;
+  onPatch: (patch: FeatureDragPatch) => void;
+  onDragState?: (dragging: boolean) => void;
+}) {
+  const u = feature.offsetUMm ?? 0;
+  const v = feature.offsetVMm ?? 0;
+  const w = feature.widthMm;
+  const h = feature.heightMm;
+  const depth = feature.depthMm;
+  const plane = feature.plane;
+  const origin = featureOriginOnPlane(plane, u, v);
+  const axis = extrusionAxis(plane);
+  const depthPos = extrusionDepthPosition(plane, u, v, depth);
+  const movePos = offsetAlongAxis(depthPos, axis, 2);
+
+  return (
+    <group>
+      <DragHandle
+        kind="cutMove"
+        position={movePos}
+        color="#c45c26"
+        label="move"
+        onDragState={onDragState}
+        onDrag={(delta) => {
+          onPatch({
+            offsetUMm: snapMm(u + delta.x),
+            offsetVMm: snapMm(v + delta.y),
+          });
+        }}
+      />
+      {feature.profile === "circle" ? (
+        <DragHandle
+          kind="cutWidth"
+          position={profileWidthHandlePosition(plane, u, v, w, depth)}
+          axisOrigin={origin}
+          color="#2a6f8f"
+          label="Ø"
+          axis={profileSizeAxis(plane, "width")}
+          onDragState={onDragState}
+          onDrag={(delta) => {
+            const axisName = profileSizeAxis(plane, "width");
+            const deltaRad =
+              axisName === "x"
+                ? delta.x
+                : axisName === "y"
+                  ? delta.y
+                  : delta.z;
+            onPatch({ widthMm: snapMm(Math.max(1, w + deltaRad * 2)) });
+          }}
+        />
+      ) : (
+        <>
+          <DragHandle
+            kind="cutWidth"
+            position={profileWidthHandlePosition(plane, u, v, w, depth)}
+            axisOrigin={origin}
+            color="#2a6f8f"
+            label="W"
+            axis={profileSizeAxis(plane, "width")}
+            onDragState={onDragState}
+            onDrag={(delta) => {
+              const axisName = profileSizeAxis(plane, "width");
+              const deltaW =
+                axisName === "x"
+                  ? delta.x
+                  : axisName === "y"
+                    ? delta.y
+                    : delta.z;
+              onPatch({ widthMm: snapMm(Math.max(1, w + deltaW * 2)) });
+            }}
+          />
+          <DragHandle
+            kind="cutHeight"
+            position={profileHeightHandlePosition(plane, u, v, h, depth)}
+            axisOrigin={origin}
+            color="#2a6f8f"
+            label="H"
+            axis={profileSizeAxis(plane, "height")}
+            onDragState={onDragState}
+            onDrag={(delta) => {
+              const axisName = profileSizeAxis(plane, "height");
+              const deltaH =
+                axisName === "x"
+                  ? delta.x
+                  : axisName === "y"
+                    ? delta.y
+                    : delta.z;
+              onPatch({ heightMm: snapMm(Math.max(1, h + deltaH * 2)) });
+            }}
+          />
+        </>
+      )}
+      <DragHandle
+        kind="cutDepth"
+        position={depthPos}
+        axisOrigin={origin}
+        color="#5a8f2a"
+        label="D"
+        axis={axis}
+        onDragState={onDragState}
+        onDrag={(delta) => {
+          const deltaDepth =
+            axis === "x" ? delta.x : axis === "y" ? delta.y : delta.z;
+          onPatch({ depthMm: snapMm(Math.max(0.5, depth + deltaDepth)) });
         }}
       />
     </group>

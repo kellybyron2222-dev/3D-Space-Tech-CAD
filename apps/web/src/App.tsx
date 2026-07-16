@@ -294,11 +294,10 @@ export function App() {
 
   function addFeature(feature: CadFeature) {
     dismissImportPreview();
-    studio.setDoc((prev) => ({
-      ...prev,
-      features: [...prev.features, feature],
+    studio.setSnapshot((snap) => ({
+      doc: { ...snap.doc, features: [...snap.doc.features, feature] },
+      selectedFeatureId: feature.id,
     }));
-    setSelectedFeatureId(feature.id);
     setUxNote(`Added ${feature.kind}: ${feature.name}`);
   }
 
@@ -1249,7 +1248,8 @@ export function App() {
                   selectedFeature?.kind === "box" ||
                   selectedFeature?.kind === "hole" ||
                   selectedFeature?.kind === "extrude" ||
-                  selectedFeature?.kind === "revolve"
+                  selectedFeature?.kind === "revolve" ||
+                  selectedFeature?.kind === "cut"
                     ? selectedFeature
                     : null
                 }

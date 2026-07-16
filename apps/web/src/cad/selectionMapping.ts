@@ -182,7 +182,7 @@ export function formatFeatureDimensionReadout(
   if (feature.kind === "cut") {
     const u = feature.offsetUMm ?? 0;
     const v = feature.offsetVMm ?? 0;
-    return `cut ${feature.widthMm.toFixed(1)}×${feature.heightMm.toFixed(1)} @ (${u.toFixed(1)}, ${v.toFixed(1)})`;
+    return `cut ${feature.widthMm.toFixed(1)}×${feature.heightMm.toFixed(1)} · depth ${feature.depthMm.toFixed(1)} @ (${u.toFixed(1)}, ${v.toFixed(1)})`;
   }
   return null;
 }

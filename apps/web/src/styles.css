@@ -372,6 +372,10 @@ button.tool.active {
 
 .viewport-hud--placing {
   color: #c45c26;
+  font-weight: 600;
+  background: rgba(255, 244, 235, 0.95);
+  border-color: #e8a070;
+  box-shadow: 0 0 0 1px rgba(196, 92, 38, 0.15);
 }
 
 .viewport-fit {

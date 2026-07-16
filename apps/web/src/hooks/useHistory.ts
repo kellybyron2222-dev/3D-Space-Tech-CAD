@@ -84,6 +84,17 @@ export function usePartStudioHistory(
     canRedo,
   } = useHistory(initial, limit);
 
+  const setSnapshot = useCallback(
+    (
+      next:
+        | PartStudioSnapshot
+        | ((prev: PartStudioSnapshot) => PartStudioSnapshot),
+    ) => {
+      set(next);
+    },
+    [set],
+  );
+
   const setDoc = useCallback(
     (
       next:
@@ -145,6 +156,7 @@ export function usePartStudioHistory(
     present,
     doc: present.doc,
     selectedFeatureId: present.selectedFeatureId,
+    setSnapshot,
     setDoc,
     replaceDoc,
     setSelectedFeatureId,

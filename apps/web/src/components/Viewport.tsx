@@ -596,7 +596,8 @@ export function Viewport({
     (editFeature?.kind === "box" ||
       editFeature?.kind === "hole" ||
       editFeature?.kind === "extrude" ||
-      editFeature?.kind === "revolve");
+      editFeature?.kind === "revolve" ||
+      editFeature?.kind === "cut");
   const placeHint =
     sketchPlaceMode === "circle"
       ? "click to place circle"
