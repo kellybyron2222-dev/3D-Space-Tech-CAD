@@ -451,12 +451,14 @@ function RaycastSuppressor({
 function ToolPlaceGhost({
   kind,
   point,
+  sizeMm,
 }: {
   kind: "hole" | "cut";
   point: { x: number; y: number; z: number };
+  sizeMm: number;
 }) {
   // Scene is Z-up; Three cylinder is Y-up — rotate onto Z for through-cut preview.
-  const r = kind === "hole" ? 3 : 6;
+  const r = Math.max(1.5, sizeMm / 2);
   const h = kind === "hole" ? 14 : 20;
   return (
     <mesh
@@ -485,6 +487,9 @@ function SelectableBody({
   onSelectFace,
   onSelectEdge,
   onHoverPoint,
+  onPlaceSize,
+  onPlaceSizing,
+  placementTool = null,
   selectionEnabled = true,
 }: {
   mesh: TessellationResult;
@@ -497,6 +502,7 @@ function SelectableBody({
       altKey?: boolean;
       edgeSelect?: boolean;
       point?: { x: number; y: number; z: number };
+      sizeMm?: number;
     },
   ) => void;
   onSelectEdge: (
@@ -508,9 +514,18 @@ function SelectableBody({
     },
   ) => void;
   onHoverPoint?: (point: { x: number; y: number; z: number } | null) => void;
+  onPlaceSize?: (sizeMm: number | null) => void;
+  onPlaceSizing?: (sizing: boolean) => void;
+  placementTool?: "hole" | "cut" | null;
   selectionEnabled?: boolean;
 }) {
-  const down = useRef<{ x: number; y: number } | null>(null);
+  const down = useRef<{
+    x: number;
+    y: number;
+    wx: number;
+    wy: number;
+    wz: number;
+  } | null>(null);
   const groups = mesh.faces.faceGroups ?? [];
   void faceIndex;
   void edgeIndex;
@@ -519,22 +534,71 @@ function SelectableBody({
     <group
       onPointerDown={(e: ThreeEvent<PointerEvent>) => {
         if (!selectionEnabled) return;
-        down.current = { x: e.clientX, y: e.clientY };
+        down.current = {
+          x: e.clientX,
+          y: e.clientY,
+          wx: e.point.x,
+          wy: e.point.y,
+          wz: e.point.z,
+        };
+        if (placementTool) {
+          onPlaceSizing?.(true);
+          onHoverPoint?.({ x: e.point.x, y: e.point.y, z: e.point.z });
+          onPlaceSize?.(placementTool === "hole" ? 6 : 12);
+        }
         e.stopPropagation();
       }}
       onPointerMove={(e: ThreeEvent<PointerEvent>) => {
-        if (!selectionEnabled || !onHoverPoint) return;
-        onHoverPoint({ x: e.point.x, y: e.point.y, z: e.point.z });
+        if (!selectionEnabled) return;
+        if (placementTool && down.current) {
+          const center = down.current;
+          onHoverPoint?.({ x: center.wx, y: center.wy, z: center.wz });
+          const dist = Math.hypot(
+            e.point.x - center.wx,
+            e.point.y - center.wy,
+          );
+          const size =
+            dist < 1.5
+              ? placementTool === "hole"
+                ? 6
+                : 12
+              : Math.max(3, Math.round(dist * 2 * 2) / 2);
+          onPlaceSize?.(size);
+          return;
+        }
+        onHoverPoint?.({ x: e.point.x, y: e.point.y, z: e.point.z });
       }}
       onPointerOut={() => {
+        if (down.current && placementTool) return;
         onHoverPoint?.(null);
+        onPlaceSize?.(null);
       }}
       onPointerUp={(e: ThreeEvent<PointerEvent>) => {
         if (!selectionEnabled || !down.current) return;
-        const dx = e.clientX - down.current.x;
-        const dy = e.clientY - down.current.y;
+        const start = down.current;
         down.current = null;
-        if (dx * dx + dy * dy < 16) {
+        const dx = e.clientX - start.x;
+        const dy = e.clientY - start.y;
+        const screenDragSq = dx * dx + dy * dy;
+
+        if (placementTool && !e.shiftKey) {
+          e.stopPropagation();
+          onPlaceSizing?.(false);
+          const dist = Math.hypot(e.point.x - start.wx, e.point.y - start.wy);
+          const sizeMm =
+            dist < 1.5
+              ? placementTool === "hole"
+                ? 6
+                : 12
+              : Math.max(3, Math.round(dist * 2 * 2) / 2);
+          const point = { x: start.wx, y: start.wy, z: start.wz };
+          const hitFace = faceGroupFromTriangleIndex(e.faceIndex, groups);
+          onSelectFace(hitFace, { altKey: e.altKey, point, sizeMm });
+          onPlaceSize?.(null);
+          return;
+        }
+
+        if (screenDragSq < 16) {
           e.stopPropagation();
           const point = {
             x: e.point.x,
@@ -572,6 +636,7 @@ export type ViewportBodySelectHandler = (
     altKey?: boolean;
     edgeSelect?: boolean;
     point?: { x: number; y: number; z: number };
+    sizeMm?: number;
   },
 ) => void;
 
@@ -625,6 +690,8 @@ export function Viewport({
   placementTool?: "hole" | "cut" | null;
 }) {
   const [handleDragging, setHandleDragging] = useState(false);
+  const [placeSizing, setPlaceSizing] = useState(false);
+  const [placeSizeMm, setPlaceSizeMm] = useState<number | null>(null);
   const [hoverPoint, setHoverPoint] = useState<{
     x: number;
     y: number;
@@ -673,13 +740,21 @@ export function Viewport({
         : sketchPlaceMode === "line"
           ? "drag to place line"
           : null;
+  const ghostSizeMm =
+    placeSizeMm ?? (placementTool === "cut" ? 12 : 6);
   const hoverReadout =
     placementTool && hoverPoint
-      ? `${placementTool === "hole" ? "Hole" : "Cut"} @ (${hoverPoint.x.toFixed(1)}, ${hoverPoint.y.toFixed(1)}) — click to place`
+      ? placeSizing
+        ? `${placementTool === "hole" ? "Hole" : "Cut"} Ø${ghostSizeMm.toFixed(1)} @ (${hoverPoint.x.toFixed(1)}, ${hoverPoint.y.toFixed(1)}) — release to place`
+        : `${placementTool === "hole" ? "Hole" : "Cut"} @ (${hoverPoint.x.toFixed(1)}, ${hoverPoint.y.toFixed(1)}) — click or drag to size`
       : null;
 
   useEffect(() => {
-    if (!placementTool) setHoverPoint(null);
+    if (!placementTool) {
+      setHoverPoint(null);
+      setPlaceSizeMm(null);
+      setPlaceSizing(false);
+    }
   }, [placementTool]);
 
   return (
@@ -740,7 +815,10 @@ export function Viewport({
                 faceIndex={faceIndex ?? null}
                 edgeIndex={edgeIndex ?? null}
                 selectionEnabled={!placingSketch}
+                placementTool={placementTool}
                 onHoverPoint={placementTool ? setHoverPointSnapped : undefined}
+                onPlaceSize={setPlaceSizeMm}
+                onPlaceSizing={setPlaceSizing}
                 onSelectFace={(i, opts) => {
                   onSelectBody?.(i, opts);
                 }}
@@ -752,7 +830,11 @@ export function Viewport({
             </RaycastSuppressor>
             <FitCamera mesh={mesh} fitNonce={fitNonce} />
             {placementTool && hoverPoint ? (
-              <ToolPlaceGhost kind={placementTool} point={hoverPoint} />
+              <ToolPlaceGhost
+                kind={placementTool}
+                point={hoverPoint}
+                sizeMm={ghostSizeMm}
+              />
             ) : null}
             {canEditHandles && editFeature && onFeatureDrag ? (
               <FeatureHandles
@@ -767,7 +849,9 @@ export function Viewport({
             ) : null}
           </>
         ) : null}
-        <OrbitControls enabled={!handleDragging && !placingSketch} />
+        <OrbitControls
+          enabled={!handleDragging && !placingSketch && !placeSizing}
+        />
       </Canvas>
     </div>
   );

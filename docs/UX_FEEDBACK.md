@@ -142,3 +142,9 @@ Treated as wrong product shape. Analysis lives under **Analysis** tab.
 - Select tool: title, HUD hint, status bar label; idle status shows `H/C/F click-where`
 
 **Sim feedback:** "Select mode finally reads as a mode, not a mystery toggle. Coach + status bar teach H/C/F without opening Getting Started."
+
+### Loop M ? Drag to size hole/cut
+- Hole/Cut: press on the solid, drag to set Ø, release to place (click alone keeps default size)
+- Ghost + HUD show live Ø while sizing; orbit disabled during the drag
+
+**Sim feedback:** "Drag-to-size is the first moment that feels closer to TinkerCAD than a form fill-in."

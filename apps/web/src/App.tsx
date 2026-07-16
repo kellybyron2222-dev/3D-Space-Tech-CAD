@@ -104,8 +104,8 @@ const ACTIVE_TOOL_HINTS: Record<
   Exclude<ActiveTool, null | "select">,
   string
 > = {
-  cut: "Cut tool: click where to cut (or Enter from sketch) · Esc cancels",
-  hole: "Hole tool: click where to drill (or Enter) · Esc cancels",
+  cut: "Cut tool: click or drag to size where to cut (or Enter) · Esc cancels",
+  hole: "Hole tool: click or drag to size where to drill (or Enter) · Esc cancels",
   fillet: "Fillet tool: Shift+click nearest edge (or Enter) · Esc cancels",
   chamfer: "Chamfer tool: Shift+click nearest edge (or Enter) · Esc cancels",
   extrude:
@@ -371,7 +371,10 @@ export function App() {
     } satisfies BoxFeature);
   }
 
-  function addCut(at?: { x: number; y: number; z: number }) {
+  function addCut(
+    at?: { x: number; y: number; z: number },
+    sizeMm?: number,
+  ) {
     const sketch = at ? undefined : sketchForNextOp();
     const wall =
       typeof doc.parameters?.wall === "number" ? doc.parameters.wall : null;
@@ -379,6 +382,7 @@ export function App() {
       80,
       (wall ?? measureBox?.z ?? 20) + 40,
     );
+    const sized = sizeMm != null ? Math.max(3, snapMm(sizeMm)) : null;
     const id = newFeatureId("cut");
     addFeature({
       id,
@@ -387,17 +391,20 @@ export function App() {
       sketchId: sketch?.id,
       plane: sketch?.plane ?? "front",
       profile: sketch?.profile ?? (at ? "circle" : "rect"),
-      widthMm: sketch?.widthMm ?? (at ? 12 : 20),
-      heightMm: sketch?.heightMm ?? (at ? 12 : 20),
+      widthMm: sketch?.widthMm ?? sized ?? (at ? 12 : 20),
+      heightMm: sketch?.heightMm ?? sized ?? (at ? 12 : 20),
       depthMm: throughDepth,
       offsetUMm: at ? snapMm(at.x) : sketch?.offsetUMm,
       offsetVMm: at ? snapMm(at.y) : sketch?.offsetVMm,
     } satisfies CutFeature);
   }
 
-  function addHole(at?: { x: number; y: number; z: number }) {
+  function addHole(
+    at?: { x: number; y: number; z: number },
+    sizeMm?: number,
+  ) {
     const id = newFeatureId("hole");
-    let diameterMm = 6;
+    let diameterMm = sizeMm != null ? Math.max(3, snapMm(sizeMm)) : 6;
     let xMm = 15;
     let yMm = 10;
     if (at) {
@@ -473,13 +480,16 @@ export function App() {
     });
   }
 
-  function applyActiveTool(hit?: { x: number; y: number; z: number }) {
+  function applyActiveTool(
+    hit?: { x: number; y: number; z: number },
+    sizeMm?: number,
+  ) {
     switch (activeTool) {
       case "cut":
-        addCut(hit);
+        addCut(hit, sizeMm);
         break;
       case "hole":
-        addHole(hit);
+        addHole(hit, sizeMm);
         break;
       case "fillet":
         addFillet();
@@ -810,11 +820,12 @@ export function App() {
       altKey?: boolean;
       edgeSelect?: boolean;
       point?: { x: number; y: number; z: number };
+      sizeMm?: number;
     },
   ) {
     const placingFeature = isPlacementTool;
     if (placingFeature) {
-      applyActiveTool(opts?.point);
+      applyActiveTool(opts?.point, opts?.sizeMm);
     }
     const bodyWasSelected = bodySelected;
     setBodySelected(true);
