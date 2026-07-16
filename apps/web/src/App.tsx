@@ -158,6 +158,7 @@ export function App() {
   const [uxNote, setUxNote] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ActiveTool>(null);
   const [draggingHandles, setDraggingHandles] = useState(false);
+  const draggingHandlesRef = useRef(false);
   const rebuildGen = useRef(0);
   const displayMesh = importPreview ?? mesh;
   const displayMaterial = getMaterial(materialId);
@@ -218,9 +219,14 @@ export function App() {
 
   const rebuild = useCallback(async (next: FeatureDocument) => {
     const gen = ++rebuildGen.current;
-    setBusy(true);
+    const editing = draggingHandlesRef.current;
+    if (!editing) {
+      setBusy(true);
+      setStatus("Rebuilding…");
+    } else {
+      setStatus("Editing…");
+    }
     setError(null);
-    setStatus("Rebuilding…");
     try {
       const cad = getCadApi();
       await cad.ready();
@@ -235,12 +241,15 @@ export function App() {
       }
       setMesh(result.mesh);
       setMass(result.mass);
-      setStatus(
-        `${next.name} · ${Math.round(tris).toLocaleString()} tris · ${result.mass.massKg.toFixed(3)} kg (Al L0)`,
-      );
-      setFitNonce((n) => n + 1);
+      if (!editing) {
+        setStatus(
+          `${next.name} · ${Math.round(tris).toLocaleString()} tris · ${result.mass.massKg.toFixed(3)} kg (Al L0)`,
+        );
+        setFitNonce((n) => n + 1);
+      }
     } catch (err) {
       if (gen !== rebuildGen.current) return;
+      if (editing) return;
       const message = err instanceof Error ? err.message : "Rebuild failed";
       setError(message);
       setStatus("Rebuild failed");
@@ -250,7 +259,7 @@ export function App() {
         `Rebuild failed: ${message}. Try “Bracket demo” or “Reset & clear autosave”.`,
       );
     } finally {
-      if (gen === rebuildGen.current) setBusy(false);
+      if (gen === rebuildGen.current && !editing) setBusy(false);
     }
   }, [dismissImportPreview]);
 
@@ -263,6 +272,11 @@ export function App() {
   }
 
   useEffect(() => {
+    draggingHandlesRef.current = draggingHandles;
+  }, [draggingHandles]);
+
+  useEffect(() => {
+    // Skip kernel rebuild storms while dragging handles; rebuild once on release
     if (draggingHandles) return;
     void rebuild(doc);
   }, [doc, rebuild, draggingHandles]);
@@ -740,30 +754,33 @@ export function App() {
     faceIndexNext: number | null,
     opts?: { altKey?: boolean; edgeSelect?: boolean },
   ) {
-    if (isPlacementTool) {
+    const placingFeature = isPlacementTool;
+    if (placingFeature) {
       applyActiveTool();
     }
     const bodyWasSelected = bodySelected;
     setBodySelected(true);
     if (faceIndexNext != null) setFaceIndex(faceIndexNext);
 
-    const faceCount = displayMesh?.faces.faceGroups?.length ?? 0;
-    const { featureId, uxNote } = resolveViewportBodySelect({
-      features: doc.features,
-      selectedFeatureId,
-      bodyWasSelected,
-      faceIndex: faceIndexNext,
-      faceCount,
-      altKey: Boolean(opts?.altKey),
-      edgeSelect: Boolean(opts?.edgeSelect),
-    });
-    if (featureId) setSelectedFeatureId(featureId);
-    if (uxNote) {
-      setUxNote(
-        uxNote.startsWith("Drag handles active:") || isPlacementTool
-          ? uxNote
-          : `${uxNote} Pick a toolbar tool (Cut, Hole, …) then click the solid to place.`,
-      );
+    if (!placingFeature) {
+      const faceCount = displayMesh?.faces.faceGroups?.length ?? 0;
+      const { featureId, uxNote } = resolveViewportBodySelect({
+        features: doc.features,
+        selectedFeatureId,
+        bodyWasSelected,
+        faceIndex: faceIndexNext,
+        faceCount,
+        altKey: Boolean(opts?.altKey),
+        edgeSelect: Boolean(opts?.edgeSelect),
+      });
+      if (featureId) setSelectedFeatureId(featureId);
+      if (uxNote) {
+        setUxNote(
+          uxNote.startsWith("Drag handles active:")
+            ? uxNote
+            : `${uxNote} Pick a toolbar tool (Cut, Hole, …) then click the solid to place.`,
+        );
+      }
     }
 
     if (mesh?.faces.vertices.length) {
@@ -1094,7 +1111,7 @@ export function App() {
               Delete
             </button>
             <span className="cad-status">
-              {busy ? "Rebuilding…" : status}
+              {draggingHandles ? "Editing…" : busy ? "Rebuilding…" : status}
               {error ? ` · ${error}` : ""}
             </span>
           </div>
@@ -1181,6 +1198,7 @@ export function App() {
                     : null
                 }
                 onFeatureDragStart={() => {
+                  draggingHandlesRef.current = true;
                   setDraggingHandles(true);
                   // Snapshot before drag so Ctrl+Z restores pre-drag pose
                   studio.setDoc((prev) => structuredClone(prev));
@@ -1207,6 +1225,7 @@ export function App() {
                   });
                 }}
                 onFeatureDragEnd={() => {
+                  draggingHandlesRef.current = false;
                   setDraggingHandles(false);
                 }}
                 sketchGhost={sketchGhost}
