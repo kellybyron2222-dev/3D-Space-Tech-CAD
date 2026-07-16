@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const KEY = "spacetech.gettingStarted.dismissed";
+const KEY = "spacetech.gettingStarted.v2";
 
 function wasDismissed(): boolean {
   try {
@@ -47,18 +47,19 @@ export function GettingStarted({
         </p>
         <ol className="getting-started-steps">
           <li>
-            Drag to orbit. Click the body to select. Change{" "}
-            <strong>holeDia</strong> or <strong>wall</strong> under Parameters
-            → the solid rebuilds.
+            Choose a tool (<strong>Cut</strong> / <strong>Hole</strong> /{" "}
+            <strong>Fillet</strong>) in the toolbar — it stays active.
           </li>
           <li>
-            Or make your own: <strong>New</strong> → <strong>Sketch</strong> →
-            place a rect → <strong>Extrude</strong> → <strong>Hole</strong> →
-            <strong>Fillet</strong>.
+            Click the solid (or <strong>Enter</strong>) to place that feature.
           </li>
           <li>
-            Then open <strong>Assembly</strong>, <strong>Drawing</strong>, and{" "}
-            <strong>Export STEP</strong> — that is the product exit path.
+            Click the solid to select Base / Hole / Extrude; drag colored
+            handles to reshape.
+          </li>
+          <li>
+            Change <strong>Parameters</strong> or <strong>Properties</strong> for
+            precise numbers.
           </li>
         </ol>
         <div className="getting-started-actions">

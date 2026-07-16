@@ -96,3 +96,10 @@ Treated as wrong product shape. Analysis lives under **Analysis** tab.
 **Sim feedback:** "Feels like a real CAD preview now — sketcher still thin vs Onshape but the exit path is teachable."
 
 **Still open:** true B-rep edge fillet map, silhouette drawings, full mates, AI patches.
+
+### Loop G — Tool-first placement + handles
+- Toolbar picks Cut/Hole/Fillet; tool stays active until placed
+- Click solid (or Enter) to place; select feature → drag colored handles
+- Parameters/Properties for numeric edits; GettingStarted reset to v2 key
+
+**Sim feedback:** "Tool-then-click matches CAD muscle memory. Handles make Bracket-Demo editable without opening every param first."

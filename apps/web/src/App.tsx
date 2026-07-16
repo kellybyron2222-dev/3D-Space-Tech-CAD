@@ -58,6 +58,10 @@ import {
   useAutosave,
 } from "./hooks/useAutosave";
 import { usePartStudioHistory } from "./hooks/useHistory";
+import {
+  isViewportEditableKind,
+  resolveViewportBodySelect,
+} from "./cad/selectionMapping";
 
 function isTypingTarget(t: EventTarget | null): boolean {
   if (
@@ -79,6 +83,29 @@ function initialDocument(): FeatureDocument {
 }
 
 type DocTab = "part" | "assembly" | "drawing" | "analysis";
+
+type ActiveTool =
+  | null
+  | "cut"
+  | "hole"
+  | "fillet"
+  | "chamfer"
+  | "extrude"
+  | "select";
+
+const ACTIVE_TOOL_HINTS: Record<
+  Exclude<ActiveTool, null | "select">,
+  string
+> = {
+  cut: "Cut tool: click a face or press Enter to place cut from current sketch",
+  hole: "Hole tool: click the solid or press Enter to place a hole",
+  fillet:
+    "Fillet tool: Shift+click an edge or click the solid, then press Enter",
+  chamfer:
+    "Chamfer tool: Shift+click an edge or click the solid, then press Enter",
+  extrude:
+    "Extrude tool: click the solid or press Enter to extrude from current sketch",
+};
 
 function isEditableFeature(f: CadFeature | null): f is CadFeature {
   return f != null && f.kind !== "importBody";
@@ -120,6 +147,7 @@ export function App() {
   const [tab, setTab] = useState<DocTab>("part");
   const [fitNonce, setFitNonce] = useState(0);
   const [uxNote, setUxNote] = useState<string | null>(null);
+  const [activeTool, setActiveTool] = useState<ActiveTool>(null);
   const rebuildGen = useRef(0);
   const displayMesh = importPreview ?? mesh;
   const displayMaterial = getMaterial(materialId);
@@ -362,27 +390,77 @@ export function App() {
     } satisfies HoleFeature);
   }
 
-  function addFillet() {
+  function addFillet(edgeOverride?: number) {
+    const bound =
+      edgeOverride != null
+        ? [edgeOverride]
+        : edgeIndex != null
+          ? [edgeIndex]
+          : undefined;
     const id = newFeatureId("fil");
     addFeature({
       id,
       name: `Fillet ${doc.features.length + 1}`,
       kind: "fillet",
       radiusMm: 2,
-      edgeIndices: edgeIndex != null ? [edgeIndex] : undefined,
+      edgeIndices: bound,
     } satisfies FilletFeature);
   }
 
-  function addChamfer() {
+  function addChamfer(edgeOverride?: number) {
+    const bound =
+      edgeOverride != null
+        ? [edgeOverride]
+        : edgeIndex != null
+          ? [edgeIndex]
+          : undefined;
     const id = newFeatureId("chm");
     addFeature({
       id,
       name: `Chamfer ${doc.features.length + 1}`,
       kind: "chamfer",
       distanceMm: 1.5,
-      edgeIndices: edgeIndex != null ? [edgeIndex] : undefined,
+      edgeIndices: bound,
     } satisfies ChamferFeature);
   }
+
+  function toggleActiveTool(tool: Exclude<ActiveTool, null | "select">) {
+    setActiveTool((prev) => {
+      const next = prev === tool ? null : tool;
+      if (next) setUxNote(ACTIVE_TOOL_HINTS[next]);
+      return next;
+    });
+  }
+
+  function applyActiveTool() {
+    switch (activeTool) {
+      case "cut":
+        addCut();
+        break;
+      case "hole":
+        addHole();
+        break;
+      case "fillet":
+        addFillet();
+        break;
+      case "chamfer":
+        addChamfer();
+        break;
+      case "extrude":
+        addExtrudeFromSketch();
+        break;
+      default:
+        return;
+    }
+    setActiveTool(null);
+  }
+
+  const isPlacementTool =
+    activeTool === "cut" ||
+    activeTool === "hole" ||
+    activeTool === "fillet" ||
+    activeTool === "chamfer" ||
+    activeTool === "extrude";
 
   function addRevolve() {
     const id = newFeatureId("rev");
@@ -493,6 +571,7 @@ export function App() {
         return;
       }
       if (e.key === "Escape") {
+        setActiveTool(null);
         setBodySelected(false);
         setMeasureMm(null);
         setMeasureBox(null);
@@ -505,6 +584,12 @@ export function App() {
       if (inField) return;
 
       if (tab !== "part") return;
+
+      if (e.key === "Enter" && isPlacementTool) {
+        e.preventDefault();
+        applyActiveTool();
+        return;
+      }
 
       if (e.key === "End") {
         studio.setDoc((p) => ({ ...p, rollbackIndex: null }));
@@ -526,7 +611,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [studio, tab, selectedFeatureId, doc]);
+  }, [studio, tab, selectedFeatureId, doc, activeTool, isPlacementTool]);
 
   async function exportStep() {
     setBusy(true);
@@ -622,22 +707,36 @@ export function App() {
     }
   }
 
-  function onSelectBody() {
+  function onViewportBodySelect(
+    faceIndexNext: number | null,
+    opts?: { altKey?: boolean; edgeSelect?: boolean },
+  ) {
+    if (isPlacementTool) {
+      applyActiveTool();
+    }
+    const bodyWasSelected = bodySelected;
     setBodySelected(true);
-    // Prefer an editable solid in the tree so drag handles appear
-    const editable =
-      (selectedFeature?.kind === "box" || selectedFeature?.kind === "hole"
-        ? selectedFeature
-        : null) ??
-      [...doc.features]
-        .reverse()
-        .find((f) => f.kind === "box" || f.kind === "hole");
-    if (editable) {
-      setSelectedFeatureId(editable.id);
+    if (faceIndexNext != null) setFaceIndex(faceIndexNext);
+
+    const faceCount = displayMesh?.faces.faceGroups?.length ?? 0;
+    const { featureId, uxNote } = resolveViewportBodySelect({
+      features: doc.features,
+      selectedFeatureId,
+      bodyWasSelected,
+      faceIndex: faceIndexNext,
+      faceCount,
+      altKey: Boolean(opts?.altKey),
+      edgeSelect: Boolean(opts?.edgeSelect),
+    });
+    if (featureId) setSelectedFeatureId(featureId);
+    if (uxNote) {
       setUxNote(
-        `Selected ${editable.name} — drag the colored handles to move/resize. Tools like Cut still add features in the tree.`,
+        uxNote.startsWith("Drag handles active:") || isPlacementTool
+          ? uxNote
+          : `${uxNote} Pick a toolbar tool (Cut, Hole, …) then click the solid to place.`,
       );
     }
+
     if (mesh?.faces.vertices.length) {
       const v = mesh.faces.vertices;
       let minX = Infinity,
@@ -839,33 +938,64 @@ export function App() {
             </div>
           ) : null}
           <div className="cad-toolbar" role="toolbar">
+            <button
+              type="button"
+              className={activeTool === "select" ? "tool active" : "tool"}
+              disabled={busy}
+              onClick={() =>
+                setActiveTool((prev) => (prev === "select" ? null : "select"))
+              }
+            >
+              Select
+            </button>
+            <span className="toolbar-sep" />
             <button type="button" className="tool" disabled={busy} onClick={addSketch}>
               Sketch
             </button>
             <button
               type="button"
-              className="tool"
+              className={activeTool === "extrude" ? "tool active" : "tool"}
               disabled={busy}
-              onClick={addExtrudeFromSketch}
+              onClick={() => toggleActiveTool("extrude")}
             >
               Extrude
             </button>
             <button type="button" className="tool" disabled={busy} onClick={addBox}>
               Box
             </button>
-            <button type="button" className="tool" disabled={busy} onClick={addCut}>
+            <button
+              type="button"
+              className={activeTool === "cut" ? "tool active" : "tool"}
+              disabled={busy}
+              onClick={() => toggleActiveTool("cut")}
+            >
               Cut
             </button>
-            <button type="button" className="tool" disabled={busy} onClick={addHole}>
+            <button
+              type="button"
+              className={activeTool === "hole" ? "tool active" : "tool"}
+              disabled={busy}
+              onClick={() => toggleActiveTool("hole")}
+            >
               Hole
             </button>
             <button type="button" className="tool" disabled={busy} onClick={addRevolve}>
               Revolve
             </button>
-            <button type="button" className="tool" disabled={busy} onClick={addFillet}>
+            <button
+              type="button"
+              className={activeTool === "fillet" ? "tool active" : "tool"}
+              disabled={busy}
+              onClick={() => toggleActiveTool("fillet")}
+            >
               Fillet
             </button>
-            <button type="button" className="tool" disabled={busy} onClick={addChamfer}>
+            <button
+              type="button"
+              className={activeTool === "chamfer" ? "tool active" : "tool"}
+              disabled={busy}
+              onClick={() => toggleActiveTool("chamfer")}
+            >
               Chamfer
             </button>
             <button type="button" className="tool" disabled={busy} onClick={addMirror}>
@@ -972,9 +1102,11 @@ export function App() {
                 })}
               </ul>
               <p className="tree-hint">
-                Click the solid to select Base/Hole, then drag colored handles.
-                Or edit Properties. Cut/Fillet add features (not click-drag tools
-                yet). Double-click = rollback · Ctrl+Z undo.
+                Click the solid to select Base/Hole/Extrude — click again to cycle
+                features (Alt+click also cycles). Drag colored handles to edit.
+                Pick Cut / Hole / Fillet / Chamfer in the toolbar, then click the
+                solid (or Enter). Shift+click edges for fillet/chamfer. Double-click
+                = rollback · Ctrl+Z undo · Esc clears tool.
               </p>
             </aside>
 
@@ -985,7 +1117,12 @@ export function App() {
                 fitNonce={fitNonce}
                 onFit={() => setFitNonce((n) => n + 1)}
                 selected={bodySelected}
-                onSelectBody={onSelectBody}
+                onSelectBody={onViewportBodySelect}
+                toolHint={
+                  activeTool && activeTool !== "select"
+                    ? ACTIVE_TOOL_HINTS[activeTool]
+                    : null
+                }
                 onClearSelection={() => {
                   setBodySelected(false);
                   setMeasureMm(null);
@@ -996,7 +1133,8 @@ export function App() {
                 }}
                 editFeature={
                   selectedFeature?.kind === "box" ||
-                  selectedFeature?.kind === "hole"
+                  selectedFeature?.kind === "hole" ||
+                  selectedFeature?.kind === "extrude"
                     ? selectedFeature
                     : null
                 }
@@ -1067,7 +1205,6 @@ export function App() {
                   setUxNote(`Placed ${payload.kind} on sketch plane`);
                 }}
                 faceIndex={faceIndex}
-                onFaceIndex={setFaceIndex}
                 edgeIndex={edgeIndex}
                 onEdgeIndex={(i) => {
                   setEdgeIndex(i);
@@ -1085,6 +1222,13 @@ export function App() {
                   const dy = L[s + 1]! - L[s + 4]!;
                   const dz = L[s + 2]! - L[s + 5]!;
                   setEdgeLengthMm(Math.sqrt(dx * dx + dy * dy + dz * dz));
+                  if (activeTool === "fillet") {
+                    addFillet(i);
+                    setActiveTool(null);
+                  } else if (activeTool === "chamfer") {
+                    addChamfer(i);
+                    setActiveTool(null);
+                  }
                 }}
               />
             </section>
@@ -1093,6 +1237,13 @@ export function App() {
               <h2>Properties</h2>
               {faceIndex != null ? (
                 <div className="selection-chip">Face group #{faceIndex}</div>
+              ) : null}
+              {bodySelected &&
+              selectedFeature &&
+              isViewportEditableKind(selectedFeature.kind) ? (
+                <div className="selection-chip">
+                  Drag handles active: {selectedFeature.name}
+                </div>
               ) : null}
               {edgeIndex != null ? (
                 <div className="selection-chip">

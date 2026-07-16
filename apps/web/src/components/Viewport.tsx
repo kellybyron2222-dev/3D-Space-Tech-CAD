@@ -457,8 +457,14 @@ function SelectableBody({
   selected: boolean;
   faceIndex: number | null;
   edgeIndex: number | null;
-  onSelectFace: (faceIndex: number | null) => void;
-  onSelectEdge: (edgeIndex: number | null) => void;
+  onSelectFace: (
+    faceIndex: number | null,
+    opts?: { altKey?: boolean; edgeSelect?: boolean },
+  ) => void;
+  onSelectEdge: (
+    edgeIndex: number | null,
+    opts?: { altKey?: boolean; edgeSelect?: boolean },
+  ) => void;
   selectionEnabled?: boolean;
 }) {
   const down = useRef<{ x: number; y: number } | null>(null);
@@ -483,16 +489,16 @@ function SelectableBody({
             if (edgeCount > 0) {
               const next =
                 edgeIndex == null ? 0 : (edgeIndex + 1) % edgeCount;
-              onSelectEdge(next);
+              onSelectEdge(next, { altKey: e.altKey, edgeSelect: true });
             } else {
-              onSelectEdge(null);
+              onSelectEdge(null, { altKey: e.altKey, edgeSelect: true });
             }
           } else if (groups.length > 0) {
             const next =
               faceIndex == null ? 0 : (faceIndex + 1) % groups.length;
-            onSelectFace(next);
+            onSelectFace(next, { altKey: e.altKey });
           } else {
-            onSelectFace(null);
+            onSelectFace(null, { altKey: e.altKey });
           }
         }
       }}
@@ -508,6 +514,11 @@ function SelectableBody({
   );
 }
 
+export type ViewportBodySelectHandler = (
+  faceIndex: number | null,
+  opts?: { altKey?: boolean; edgeSelect?: boolean },
+) => void;
+
 export function Viewport({
   mesh,
   status,
@@ -520,33 +531,33 @@ export function Viewport({
   sketchPlaceMode = null,
   onSketchPlace,
   faceIndex,
-  onFaceIndex,
   edgeIndex,
   onEdgeIndex,
   editFeature = null,
   onFeatureDrag,
   onFeatureDragStart,
   onFeatureDragEnd,
+  toolHint = null,
 }: {
   mesh: TessellationResult | null;
   status: string;
   fitNonce?: number;
   onFit?: () => void;
   selected?: boolean;
-  onSelectBody?: () => void;
+  onSelectBody?: ViewportBodySelectHandler;
   onClearSelection?: () => void;
   sketchGhost?: SketchGhostSpec | null;
   sketchPlaceMode?: SketchPlaceMode;
   onSketchPlace?: (entity: SketchPlacePayload) => void;
   faceIndex?: number | null;
-  onFaceIndex?: (i: number | null) => void;
   edgeIndex?: number | null;
   onEdgeIndex?: (i: number | null) => void;
-  /** Selected box/hole — shows drag handles in the viewport */
+  /** Selected box/hole/extrude — shows drag handles in the viewport */
   editFeature?: CadFeature | null;
   onFeatureDrag?: (patch: FeatureDragPatch) => void;
   onFeatureDragStart?: () => void;
   onFeatureDragEnd?: () => void;
+  toolHint?: string | null;
 }) {
   const [handleDragging, setHandleDragging] = useState(false);
   const dpr = Math.min(
@@ -561,7 +572,9 @@ export function Viewport({
   const placingSketch = Boolean(sketchGhost && sketchPlaceMode && onSketchPlace);
   const canEditHandles =
     Boolean(editFeature && onFeatureDrag) &&
-    (editFeature?.kind === "box" || editFeature?.kind === "hole");
+    (editFeature?.kind === "box" ||
+      editFeature?.kind === "hole" ||
+      editFeature?.kind === "extrude");
   const placeHint =
     sketchPlaceMode === "circle"
       ? "click to place circle"
@@ -574,13 +587,15 @@ export function Viewport({
   return (
     <div className="viewport-canvas cad-viewport">
       <div
-        className={`viewport-hud${placingSketch ? " viewport-hud--placing" : ""}`}
+        className={`viewport-hud${placingSketch || toolHint ? " viewport-hud--placing" : ""}`}
       >
         {placingSketch && placeHint
           ? `[SKETCH] ${placeHint}`
-          : mesh
-            ? `${triCount.toLocaleString()} tris · ${faceCount} faces · ${edgeCount} edges · click face · Shift+click edge${edgeIndex != null ? ` · edge #${edgeIndex}` : ""}${canEditHandles ? " · drag handles to edit" : ""}`
-            : status}
+          : toolHint
+            ? `[TOOL] ${toolHint}`
+            : mesh
+              ? `${triCount.toLocaleString()} tris · ${faceCount} faces · ${edgeCount} edges · click face · Shift+click edge${edgeIndex != null ? ` · edge #${edgeIndex}` : ""}${canEditHandles ? " · drag handles to edit" : ""}`
+              : status}
       </div>
       {mesh && onFit ? (
         <button type="button" className="viewport-fit" onClick={onFit}>
@@ -599,7 +614,6 @@ export function Viewport({
         onPointerMissed={() => {
           if (placingSketch) return;
           onClearSelection?.();
-          onFaceIndex?.(null);
           onEdgeIndex?.(null);
         }}
       >
@@ -624,12 +638,11 @@ export function Viewport({
                 faceIndex={faceIndex ?? null}
                 edgeIndex={edgeIndex ?? null}
                 selectionEnabled={!placingSketch}
-                onSelectFace={(i) => {
-                  onSelectBody?.();
-                  onFaceIndex?.(i);
+                onSelectFace={(i, opts) => {
+                  onSelectBody?.(i, opts);
                 }}
-                onSelectEdge={(i) => {
-                  onSelectBody?.();
+                onSelectEdge={(i, opts) => {
+                  onSelectBody?.(null, { ...opts, edgeSelect: true });
                   onEdgeIndex?.(i);
                 }}
               />
