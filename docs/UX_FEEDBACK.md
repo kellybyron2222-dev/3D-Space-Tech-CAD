@@ -103,3 +103,11 @@ Treated as wrong product shape. Analysis lives under **Analysis** tab.
 - Parameters/Properties for numeric edits; GettingStarted reset to v2 key
 
 **Sim feedback:** "Tool-then-click matches CAD muscle memory. Handles make Bracket-Demo editable without opening every param first."
+
+### Loop H — Tool modes, handles, wall sync, crosshair
+- Mirror + Pattern join toolbar tool modes (stay active until placed)
+- Viewport crosshair + HUD hint when a placement tool is active
+- Drag handles scale up (1.3×) while dragging; rebuild deferred until release
+- Base height handle keeps `wall` named parameter in sync on Bracket-Demo
+
+**Sim feedback:** "Crosshair + hint makes tool mode obvious. Handle grow on drag feels tactile. Wall param tracking height handle closes the Bracket-Demo loop."

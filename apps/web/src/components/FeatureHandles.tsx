@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import type { CadFeature, PlaneId } from "@spacetech/sfd-lang";
@@ -341,7 +341,7 @@ function DragHandle({
   onDragState?: (dragging: boolean) => void;
 }) {
   const { camera, gl, size } = useThree();
-  const dragging = useRef(false);
+  const [dragging, setDragging] = useState(false);
   const last = useRef<{ x: number; y: number } | null>(null);
   const geom = useMemo(
     () => new THREE.SphereGeometry(HANDLE_RADIUS, 16, 12),
@@ -383,30 +383,31 @@ function DragHandle({
       <mesh
       position={position}
       geometry={geom}
+      scale={dragging ? 1.3 : 1}
       onPointerDown={(e: ThreeEvent<PointerEvent>) => {
         e.stopPropagation();
         (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
-        dragging.current = true;
+        setDragging(true);
         last.current = { x: e.clientX, y: e.clientY };
         onDragState?.(true);
         gl.domElement.style.cursor = "grabbing";
       }}
       onPointerUp={(e: ThreeEvent<PointerEvent>) => {
         e.stopPropagation();
-        dragging.current = false;
+        setDragging(false);
         last.current = null;
         onDragState?.(false);
         gl.domElement.style.cursor = "";
       }}
       onPointerLeave={() => {
-        if (!dragging.current) return;
-        dragging.current = false;
+        if (!dragging) return;
+        setDragging(false);
         last.current = null;
         onDragState?.(false);
         gl.domElement.style.cursor = "";
       }}
       onPointerMove={(e: ThreeEvent<PointerEvent>) => {
-        if (!dragging.current) return;
+        if (!dragging) return;
         e.stopPropagation();
         onDrag(projectDelta(e.clientX, e.clientY));
       }}

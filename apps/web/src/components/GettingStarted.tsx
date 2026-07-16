@@ -48,7 +48,9 @@ export function GettingStarted({
         <ol className="getting-started-steps">
           <li>
             Choose a tool (<strong>Cut</strong> / <strong>Hole</strong> /{" "}
-            <strong>Fillet</strong>) in the toolbar — it stays active.
+            <strong>Fillet</strong> / <strong>Mirror</strong> /{" "}
+            <strong>Pattern</strong>) in the toolbar — it stays active; the
+            viewport shows a crosshair while placing.
           </li>
           <li>
             Click the solid (or <strong>Enter</strong>) to place that feature.
