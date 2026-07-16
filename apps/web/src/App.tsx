@@ -261,14 +261,30 @@ export function App() {
 
   function addHole() {
     const id = newFeatureId("hole");
+    let diameterMm = 6;
+    let xMm = 15;
+    let yMm = 10;
+    if (selectedFeature?.kind === "sketch") {
+      const sk = ensureSketchEntities(selectedFeature);
+      const circle = sk.entities?.find((e) => e.kind === "circle");
+      if (circle?.kind === "circle") {
+        diameterMm = circle.diameterMm;
+        xMm = circle.cx;
+        yMm = circle.cy;
+      } else if (sk.profile === "circle") {
+        diameterMm = sk.widthMm;
+        xMm = sk.offsetUMm ?? 0;
+        yMm = sk.offsetVMm ?? 0;
+      }
+    }
     addFeature({
       id,
       name: `Hole ${doc.features.length + 1}`,
       kind: "hole",
-      diameterMm: 6,
+      diameterMm,
       depthMm: 20,
-      xMm: 15,
-      yMm: 10,
+      xMm,
+      yMm,
       zMm: 0,
     } satisfies HoleFeature);
   }
@@ -1288,6 +1304,7 @@ function FeatureProps({
             value={feature.count}
             onChange={(v) => onChange({ count: Math.max(1, Math.floor(v)) })}
           />
+          <p className="hint">Max 24 copies</p>
           <Num
             label="ΔX"
             value={feature.dxMm}

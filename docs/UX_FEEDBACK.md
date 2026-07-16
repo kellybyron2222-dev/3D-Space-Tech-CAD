@@ -80,3 +80,19 @@ Treated as wrong product shape. Analysis lives under **Analysis** tab.
 - Selecting non-sketch feature clears sketch place mode
 
 **Sim feedback:** "Two rects in one sketch extrude as one fused solid — finally multi-profile without duplicate sketches. Dims only move the first shape — need per-entity dims next."
+
+### 2h wall-clock session wrap (Loops A–F+)
+- Multi-entity sketch + place + solve
+- Edge select
+- Exit coach
+- Multi-entity extrude
+- Assembly mates
+- Material mass
+- importBody markers
+- Shortcuts
+- CI smoke
+- Driving params depth/extrude
+
+**Sim feedback:** "Feels like a real CAD preview now — sketcher still thin vs Onshape but the exit path is teachable."
+
+**Still open:** true B-rep edge fillet map, silhouette drawings, full mates, AI patches.
