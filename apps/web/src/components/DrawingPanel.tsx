@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { saveAs } from "file-saver";
 import type { TessellationResult } from "@spacetech/kernel-bridge";
 import { meshBounds } from "../cad/meshBounds";
@@ -9,6 +9,12 @@ function todayIso(): string {
 
 function formatHoleDia(dia: number): string {
   return Number.isInteger(dia) ? String(dia) : dia.toFixed(1);
+}
+
+function suggestScale(maxDim: number): string {
+  if (maxDim > 300) return "1:2";
+  if (maxDim < 40) return "2:1";
+  return "1:1";
 }
 
 /** Associative drawing v0 — ortho boxes + overall dims from live mesh bbox. */
@@ -29,10 +35,19 @@ export function DrawingPanel({
   const [sheetDate, setSheetDate] = useState(todayIso);
   const [sheetScale, setSheetScale] = useState("1:1");
   const [sheetMaterial, setSheetMaterial] = useState("Al 6061-T6 (L0)");
+  const scaleUserEdited = useRef(false);
 
   useEffect(() => {
     setSheetPartName(partName);
   }, [partName]);
+
+  useEffect(() => {
+    scaleUserEdited.current = false;
+    const b = meshBounds(mesh);
+    if (!b) return;
+    const maxDim = Math.max(b.size.x, b.size.y, b.size.z);
+    setSheetScale(suggestScale(maxDim));
+  }, [partName, mesh]);
 
   const holeDia = holeDiaMm ?? parameters?.holeDia;
   const holeNote =
@@ -221,7 +236,10 @@ export function DrawingPanel({
               <input
                 type="text"
                 value={sheetScale}
-                onChange={(e) => setSheetScale(e.target.value)}
+                onChange={(e) => {
+                  scaleUserEdited.current = true;
+                  setSheetScale(e.target.value);
+                }}
                 style={inputStyle}
               />
             </label>
