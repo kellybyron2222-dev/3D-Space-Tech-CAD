@@ -105,6 +105,41 @@ describe("sketch constraint solver", () => {
     assert.equal(solved.profile, "circle");
   });
 
+  it("coincident snaps circle center near line endpoint", () => {
+    const sketch: SketchFeature = {
+      id: "f-coin",
+      name: "Coincident sketch",
+      kind: "sketch",
+      plane: "front",
+      profile: "circle",
+      widthMm: 4,
+      heightMm: 4,
+      entities: [
+        {
+          id: "se-line",
+          kind: "line",
+          x1: 0,
+          y1: 0,
+          x2: 10,
+          y2: 0,
+        },
+        {
+          id: "se-circle",
+          kind: "circle",
+          cx: 0.3,
+          cy: 0.2,
+          diameterMm: 4,
+        },
+      ],
+    };
+
+    const solved = solveSketch(sketch);
+    const circle = solved.entities?.find((e) => e.kind === "circle");
+    assert.ok(circle && circle.kind === "circle");
+    assert.equal(circle.cx, 0);
+    assert.equal(circle.cy, 0);
+  });
+
   it("applyDrivingDimension updates constraint + geometry", () => {
     const entity = createRectSketchEntity(40, 20, 10, 5);
     const sketch: SketchFeature = {

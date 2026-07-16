@@ -635,6 +635,17 @@ export function setParameter(
   });
 }
 
+export function renameFeature(
+  doc: FeatureDocument,
+  id: string,
+  name: string,
+): FeatureDocument {
+  return {
+    ...doc,
+    features: doc.features.map((f) => (f.id === id ? { ...f, name } : f)),
+  };
+}
+
 /** Apply distance mates as placement offsets on partB relative to partA. */
 export function applyAssemblyMates(doc: AssemblyDocument): AssemblyDocument {
   const instances = doc.instances.map((i) => ({ ...i }));

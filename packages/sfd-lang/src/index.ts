@@ -381,6 +381,7 @@ export {
   activeFeatures,
   applyAssemblyMates,
   applyParameters,
+  renameFeature,
   setParameter,
   createBracketDemo,
   createCircleSketchEntity,

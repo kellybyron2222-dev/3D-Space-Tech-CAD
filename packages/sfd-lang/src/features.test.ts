@@ -4,6 +4,7 @@ import {
   activeFeatures,
   applyAssemblyMates,
   applyParameters,
+  renameFeature,
   setParameter,
   createBracketDemo,
   createCircleSketchEntity,
@@ -89,6 +90,23 @@ describe("feature document", () => {
     assert.equal(doc.parameters?.wall, 4);
     assert.equal(doc.parameters?.holeDia, 6);
     assert.equal(doc.parameters?.custom, 10);
+  });
+
+  it("renameFeature updates feature name by id", () => {
+    const base = createBracketDemo();
+    const doc = renameFeature(base, "f-base", "Renamed base");
+    const renamed = doc.features.find((f) => f.id === "f-base");
+    assert.ok(renamed);
+    assert.equal(renamed.name, "Renamed base");
+    const original = base.features.find((f) => f.id === "f-base");
+    assert.ok(original);
+    assert.notEqual(original.name, "Renamed base");
+  });
+
+  it("renameFeature leaves doc unchanged when id is missing", () => {
+    const base = createBracketDemo();
+    const doc = renameFeature(base, "missing-id", "Nope");
+    assert.deepEqual(doc.features, base.features);
   });
 
   it("applyAssemblyMates sets distance on partB Z", () => {

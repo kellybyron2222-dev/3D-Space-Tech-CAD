@@ -35,6 +35,38 @@ function setEndpoint(
   }
 }
 
+function snapCircleCentersToLineEndpoints(entities: SketchEntity[]): void {
+  const endpoints: { x: number; y: number }[] = [];
+  for (const entity of entities) {
+    if (entity.kind !== "line") continue;
+    endpoints.push({ x: entity.x1, y: entity.y1 });
+    endpoints.push({ x: entity.x2, y: entity.y2 });
+  }
+  if (endpoints.length === 0) return;
+
+  const tolSq = COINCIDENT_TOLERANCE_MM * COINCIDENT_TOLERANCE_MM;
+  for (const entity of entities) {
+    if (entity.kind !== "circle") continue;
+    let bestDistSq = Infinity;
+    let snapX: number | undefined;
+    let snapY: number | undefined;
+    for (const ep of endpoints) {
+      const dx = entity.cx - ep.x;
+      const dy = entity.cy - ep.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq <= tolSq && distSq < bestDistSq) {
+        bestDistSq = distSq;
+        snapX = ep.x;
+        snapY = ep.y;
+      }
+    }
+    if (snapX !== undefined && snapY !== undefined) {
+      entity.cx = snapX;
+      entity.cy = snapY;
+    }
+  }
+}
+
 function applyHorizontalVertical(
   entities: SketchEntity[],
   constraints: SketchConstraint[] | undefined,
@@ -111,6 +143,8 @@ function mergeCoincidentEndpoints(entities: SketchEntity[]): void {
       setEndpoint(entities, refs[i]!, avgX, avgY);
     }
   }
+
+  snapCircleCentersToLineEndpoints(entities);
 }
 
 function normalizeDimensionLabel(
